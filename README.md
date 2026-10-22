@@ -100,7 +100,7 @@ python tools/calibrate_motion.py --host robert.local:8000 offset             # o
 python tools/calibrate_motion.py --host robert.local:8000 forward --pwm 100  # -> MPS_PER_PWM
 python tools/calibrate_motion.py --host robert.local:8000 spin --pwm 100 --mps-per-pwm <valor>  # -> TRACK_EFF_M
 ```
-Y medir con cinta largo/ancho del robot y posición del LiDAR (`ROBOT_*`, `LIDAR_X_M/Y_M` en `pi/.env`).
+Medidas (2026‑10‑22): 325 × 160 mm, LiDAR en el centro (valores por defecto en `config.py`).
 `tools/record_scans.py` graba vueltas reales (los tests reproducen `pi/tests/data/room.jsonl`).
 
 **El LiDAR solo ve en su plano**: bordillos, escalones hacia abajo y objetos bajos quedan para el HC‑SR04

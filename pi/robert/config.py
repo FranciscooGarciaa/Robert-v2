@@ -43,10 +43,10 @@ class Settings:
     lidar_push_hz: float = 5.0           # scan broadcast rate to PWA clients
     # Robot geometry and motion model (measure; see tools/calibrate_motion.py).
     # Until calibrated, MPS_PER_PWM over-estimates speed so braking starts early.
-    robot_length_m: float = 0.35
-    robot_width_m: float = 0.30
+    robot_length_m: float = 0.325        # measured 2026-10-22
+    robot_width_m: float = 0.16
     robot_margin_m: float = 0.10         # clearance kept around the body
-    lidar_x_m: float = 0.0               # LiDAR position from the robot centre
+    lidar_x_m: float = 0.0               # LiDAR position from the robot centre (measured: centred)
     lidar_y_m: float = 0.0               # (x forward, y left)
     mps_per_pwm: float = 0.004
     track_eff_m: float = 0.40            # effective skid-steer track width

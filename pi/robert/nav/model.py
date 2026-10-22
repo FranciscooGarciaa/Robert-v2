@@ -12,8 +12,8 @@ from ..config import Settings
 
 @dataclass(frozen=True)
 class RobotModel:
-    length_m: float = 0.35
-    width_m: float = 0.30
+    length_m: float = 0.325
+    width_m: float = 0.16
     margin_m: float = 0.10
     lidar_x_m: float = 0.0
     lidar_y_m: float = 0.0
