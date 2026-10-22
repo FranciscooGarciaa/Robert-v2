@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 rsync -az --delete -e "ssh $SSH_OPTS" \
   --exclude '.venv' --exclude '__pycache__' --exclude '.pytest_cache' --exclude '.env' \
-  "$ROOT/pi" "$ROOT/frontend" "$PI:robert/"
+  "$ROOT/pi" "$ROOT/frontend" "$ROOT/ros" "$PI:robert/"
 
 ssh $SSH_OPTS "$PI" 'cd robert/pi && { [ -d .venv ] || python3 -m venv .venv; } && .venv/bin/pip install -q -r requirements.txt'
 # The service runs as our user with Restart=always: killing it restarts it

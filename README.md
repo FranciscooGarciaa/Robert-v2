@@ -73,7 +73,7 @@ ssh pi@robert.local journalctl -u robert -f
 USB (adaptador CH340, `/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0`), 230400 8N1. Gira y emite
 al recibir corriente. El backend lo lee en un hilo (`pi/robert/robot/lidar.py`, formato de trama documentado
 ahí), agrupa cada vuelta en 360 sectores de 1° en el marco del robot (0° = frente, sentido horario) y la PWA
-la dibuja como radar. `GET /api/lidar/scan` devuelve la última vuelta.
+la dibuja como radar. `GET /api/lidar/scan` devuelve la última vuelta. ROS 2 y cómo trabajar con el sensor: `docs/lidar-y-ros.md`.
 
 Calibración: objeto justo delante → `nearest_deg` en `/api/state` debería ser ~0. Si no, ajustar
 `LIDAR_OFFSET_DEG` en `pi/.env` (y `LIDAR_CLOCKWISE=false` si al girar el objeto se mueve al revés).
