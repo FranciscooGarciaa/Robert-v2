@@ -1,0 +1,81 @@
+:root {
+  --bg: #111418;
+  --panel: #1b2027;
+  --text: #e8ebef;
+  --muted: #8b95a3;
+  --ok: #2fbf71;
+  --warn: #e0a526;
+  --bad: #e5484d;
+  --accent: #3b82f6;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  margin: 0 auto;
+  max-width: 520px;
+  padding: max(12px, env(safe-area-inset-top)) 16px 24px;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+h1 { font-size: 22px; margin: 0; }
+.links { display: flex; gap: 6px; }
+
+.pill { font-size: 13px; padding: 3px 10px; border-radius: 999px; background: var(--panel); }
+.pill.ok { color: var(--ok); }
+.pill.bad { color: var(--bad); }
+
+.status { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
+.tile { background: var(--panel); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; }
+.label { font-size: 12px; color: var(--muted); }
+.value { font-size: 20px; font-variant-numeric: tabular-nums; }
+.value.warn { color: var(--warn); }
+.value.bad { color: var(--bad); }
+
+.pad {
+  display: grid;
+  grid-template-areas: ". f ." "l . r" ". b .";
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 8px 0 16px;
+}
+.dir {
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 32px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  touch-action: none;
+}
+.dir small { font-size: 12px; color: var(--muted); }
+.dir.active { background: var(--accent); }
+.dir.active small { color: var(--text); }
+.dir:disabled { opacity: 0.35; }
+
+.speed label { display: block; color: var(--muted); font-size: 14px; margin-bottom: 4px; }
+.speed input { width: 100%; }
+
+.stop {
+  width: 100%;
+  margin-top: 18px;
+  padding: 22px 0;
+  border: 0;
+  border-radius: 16px;
+  background: var(--bad);
+  color: #fff;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+.stop:active { filter: brightness(0.85); }
+
+.note { color: var(--muted); font-size: 12px; text-align: center; }

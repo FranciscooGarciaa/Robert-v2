@@ -1,0 +1,10 @@
+firmware/robert_motor/secrets.h
+.env
+pi/.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+.DS_Store

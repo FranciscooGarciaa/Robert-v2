@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#111418">
+  <title>Robert</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Robert</h1>
+    <div class="links">
+      <span id="link-pi" class="pill bad">Pi: —</span>
+      <span id="link-esp" class="pill bad">ESP32: —</span>
+    </div>
+  </header>
+
+  <section class="status">
+    <div class="tile"><span class="label">Distancia</span><span id="distance" class="value">—</span></div>
+    <div class="tile"><span class="label">Movimiento</span><span id="motion" class="value">—</span></div>
+    <div class="tile"><span class="label">Salida L / R</span><span id="output" class="value">—</span></div>
+    <div class="tile"><span class="label">Failsafe</span><span id="failsafe" class="value">—</span></div>
+  </section>
+
+  <section class="pad" aria-label="Control de dirección">
+    <button class="dir" data-dir="forward" style="grid-area: f">▲<small>Adelante</small></button>
+    <button class="dir" data-dir="left" style="grid-area: l">◀<small>Izquierda</small></button>
+    <button class="dir" data-dir="right" style="grid-area: r">▶<small>Derecha</small></button>
+    <button class="dir" data-dir="backward" style="grid-area: b">▼<small>Atrás</small></button>
+  </section>
+
+  <section class="speed">
+    <label for="speed">Velocidad <span id="speed-value">80</span> / <span id="speed-max">—</span></label>
+    <input id="speed" type="range" min="40" max="180" step="5" value="80">
+  </section>
+
+  <button id="stop" class="stop">STOP</button>
+  <p class="note">STOP es una parada lógica. Corte físico: desconectar XT60.</p>
+
+  <script src="app.js"></script>
+</body>
+</html>
