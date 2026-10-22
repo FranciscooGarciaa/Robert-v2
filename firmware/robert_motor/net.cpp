@@ -1,5 +1,6 @@
 #include "net.h"
 
+#include <ArduinoOTA.h>
 #include <ESPmDNS.h>
 #include <WebSocketsServer.h>
 #include <WiFi.h>
@@ -15,9 +16,11 @@ WiFiMulti wifiMulti;
 WebSocketsServer ws(cfg::WS_PORT);
 TextHandler textHandler = nullptr;
 LostHandler lostHandler = nullptr;
+OtaStartHandler otaStartHandler = nullptr;
 
 int controllerClient = NO_CONTROLLER;
 bool wasConnected = false;
+bool otaStarted = false;
 uint32_t lastWifiAttemptMs = 0;
 
 void onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
@@ -51,6 +54,11 @@ void onWifiUp() {
   } else {
     Serial.println("[WIFI] mDNS failed");
   }
+  if (!otaStarted) {
+    ArduinoOTA.begin();
+    otaStarted = true;
+    Serial.printf("[OTA] ready on port %u\n", cfg::OTA_PORT);
+  }
 }
 
 void onWifiDown() {
@@ -62,15 +70,29 @@ void onWifiDown() {
 
 }  // namespace
 
-void begin(TextHandler onText, LostHandler onLost) {
+void begin(TextHandler onText, LostHandler onLost, OtaStartHandler onOtaStart) {
   textHandler = onText;
   lostHandler = onLost;
+  otaStartHandler = onOtaStart;
 
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(cfg::MDNS_HOSTNAME);
   WiFi.setSleep(false);  // lower, steadier latency
   WiFi.setAutoReconnect(true);
   for (const auto& n : WIFI_NETWORKS) wifiMulti.addAP(n.ssid, n.password);
+
+  // Firmware updates over Wi-Fi. Motors are stopped before the transfer
+  // starts (onOtaStart), and the device reboots into STOP afterwards.
+  ArduinoOTA.setHostname(cfg::MDNS_HOSTNAME);
+  ArduinoOTA.setPort(cfg::OTA_PORT);
+  ArduinoOTA.setPassword(CONTROL_TOKEN);
+  ArduinoOTA.setMdnsEnabled(false);  // mDNS is managed in onWifiUp()
+  ArduinoOTA.onStart([] {
+    Serial.println("[OTA] update starting");
+    if (otaStartHandler) otaStartHandler();
+  });
+  ArduinoOTA.onEnd([] { Serial.println("[OTA] done, rebooting"); });
+  ArduinoOTA.onError([](ota_error_t e) { Serial.printf("[OTA] error %u\n", e); });
 
   ws.begin();
   ws.onEvent(onWsEvent);
@@ -94,6 +116,7 @@ void update(uint32_t nowMs) {
     return;
   }
   ws.loop();
+  ArduinoOTA.handle();
 }
 
 bool wifiConnected() { return wasConnected; }

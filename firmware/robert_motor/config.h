@@ -55,5 +55,6 @@ constexpr uint16_t WS_PORT = 81;
 constexpr int PROTOCOL_VERSION = 1;
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 200;  // 5 Hz
 constexpr uint32_t WIFI_RETRY_MS = 2000;
+constexpr uint16_t OTA_PORT = 3232;  // ArduinoOTA, password = CONTROL_TOKEN
 
 }  // namespace cfg

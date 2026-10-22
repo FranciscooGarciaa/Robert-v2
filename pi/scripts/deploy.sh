@@ -10,4 +10,6 @@ rsync -az --delete \
   "$ROOT/pi" "$ROOT/frontend" "$PI:robert/"
 
 ssh "$PI" 'cd robert/pi && { [ -d .venv ] || python3 -m venv .venv; } && .venv/bin/pip install -q -r requirements.txt'
-ssh -t "$PI" 'sudo systemctl restart robert && systemctl --no-pager --lines=5 status robert'
+# The service runs as our user with Restart=always: killing it restarts it
+# with the new code, no sudo needed.
+ssh "$PI" 'kill $(systemctl show -p MainPID --value robert); sleep 4; systemctl --no-pager --lines=5 status robert'

@@ -53,6 +53,8 @@ class Esp32Client:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - any failure means reconnect
+                while isinstance(exc, ExceptionGroup) and exc.exceptions:
+                    exc = exc.exceptions[0]
                 if self._state.esp32.connected:
                     log.warning("ESP32 link lost: %s", exc)
                 else:
@@ -110,8 +112,9 @@ class Esp32Client:
             if kind == "telemetry":
                 self._apply_telemetry(msg)
             elif kind == "event":
-                log.warning("ESP32 safety event: failsafe=%s distance=%s",
-                            msg.get("failsafe"), msg.get("distance_cm"))
+                level = logging.INFO if msg.get("failsafe") == "none" else logging.WARNING
+                log.log(level, "ESP32 safety event: failsafe=%s distance=%s",
+                        msg.get("failsafe"), msg.get("distance_cm"))
             elif kind == "error":
                 log.error("ESP32 rejected a message: %s", msg.get("error"))
 

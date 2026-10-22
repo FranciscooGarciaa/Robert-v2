@@ -54,7 +54,7 @@ Sin hardware: `python -m robert.sim.fake_esp32 --port 8181 --token dev` y
 En la Pi corre como servicio systemd `robert` (`pi/deploy/robert.service`). Desplegar desde el Mac:
 
 ```sh
-pi/scripts/deploy.sh     # rsync + pip + restart; PWA en http://robert.local:8000
+pi/scripts/deploy.sh     # rsync + pip + restart (sin sudo); PWA en http://robert.local:8000
 ssh pi@robert.local journalctl -u robert -f
 ```
 

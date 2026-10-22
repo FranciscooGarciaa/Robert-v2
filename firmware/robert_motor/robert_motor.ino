@@ -53,6 +53,8 @@ void onControllerLost(const char* reason) {
                                                 : safety::Failsafe::Disconnect);
 }
 
+void onOtaStart() { safety::trip(safety::Failsafe::Ota); }
+
 void onText(uint8_t client, const uint8_t* payload, size_t len) {
   const uint32_t now = millis();
   const protocol::Command cmd = protocol::parse(payload, len);
@@ -119,7 +121,7 @@ void setup() {
 
   ultrasonic::begin();
   safety::setEventSink(onSafetyEvent);
-  net::begin(onText, onControllerLost);
+  net::begin(onText, onControllerLost, onOtaStart);
   Serial.println("[BOOT] ready, motors STOPPED until a controller sends move");
 }
 

@@ -17,6 +17,7 @@ enum class Failsafe {
   WifiLost,    // ESP32 lost Wi-Fi
   Handover,    // a new controller replaced the previous one
   Malformed,   // controller sent an invalid message
+  Ota,         // firmware update over Wi-Fi in progress
   Obstacle,    // forward motion vetoed by ultrasonic (not latched)
 };
 

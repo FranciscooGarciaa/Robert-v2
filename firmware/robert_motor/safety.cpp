@@ -28,6 +28,7 @@ const char* name(Failsafe f) {
     case Failsafe::WifiLost: return "wifi_lost";
     case Failsafe::Handover: return "handover";
     case Failsafe::Malformed: return "malformed";
+    case Failsafe::Ota: return "ota";
     case Failsafe::Obstacle: return "obstacle";
   }
   return "unknown";
@@ -71,7 +72,10 @@ void trip(Failsafe reason) {
 
 void update(uint32_t nowMs) {
   const bool moving = reqLeft != 0 || reqRight != 0;
-  if (moving && nowMs - lastCommandMs > cfg::WATCHDOG_MS) {
+  // Signed difference: a command handled after nowMs was sampled carries a
+  // slightly later timestamp, which must not wrap into a huge age.
+  const int32_t sinceCommand = static_cast<int32_t>(nowMs - lastCommandMs);
+  if (moving && sinceCommand > static_cast<int32_t>(cfg::WATCHDOG_MS)) {
     trip(Failsafe::Watchdog);
   }
 

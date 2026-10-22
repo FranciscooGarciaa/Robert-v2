@@ -11,8 +11,10 @@ constexpr int NO_CONTROLLER = -1;
 using TextHandler = void (*)(uint8_t client, const uint8_t* payload, size_t len);
 // Called when the controller is lost: "disconnect" or "wifi_lost".
 using LostHandler = void (*)(const char* reason);
+// Called right before a firmware update over Wi-Fi begins.
+using OtaStartHandler = void (*)();
 
-void begin(TextHandler onText, LostHandler onLost);
+void begin(TextHandler onText, LostHandler onLost, OtaStartHandler onOtaStart);
 void update(uint32_t nowMs);
 
 bool wifiConnected();
