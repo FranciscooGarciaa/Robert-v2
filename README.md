@@ -68,6 +68,17 @@ pi/scripts/deploy.sh     # rsync + pip + restart (sin sudo); PWA en http://rober
 ssh pi@robert.local journalctl -u robert -f
 ```
 
+## LiDAR (WitMotion D6 = Guoke COIN‑D6)
+
+USB (adaptador CH340, `/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0`), 230400 8N1. Gira y emite
+al recibir corriente. El backend lo lee en un hilo (`pi/robert/robot/lidar.py`, formato de trama documentado
+ahí), agrupa cada vuelta en 360 sectores de 1° en el marco del robot (0° = frente, sentido horario) y la PWA
+la dibuja como radar. `GET /api/lidar/scan` devuelve la última vuelta.
+
+Calibración: objeto justo delante → `nearest_deg` en `/api/state` debería ser ~0. Si no, ajustar
+`LIDAR_OFFSET_DEG` en `pi/.env` (y `LIDAR_CLOCKWISE=false` si al girar el objeto se mueve al revés).
+Solo un proceso puede abrir el puerto: para usarlo desde ROS, `LIDAR_ENABLED=false` y reiniciar el servicio.
+
 ## Pruebas de banco (RUEDAS EN EL AIRE)
 
 Desde el Mac, sin Pi (`export ESP32_TOKEN=...`):
@@ -100,4 +111,4 @@ Detalles en `firmware/robert_motor/protocol.h`.
 
 - HC‑SR04 sin eco se trata como "despejado" (también si el sensor se desconecta); `us_timeouts` en telemetría lo hace visible.
 - PWA por HTTP en LAN: no instalable como app (requiere HTTPS); funciona como página.
-- Red autónoma (hotspot en la Pi), LiDAR, GPS, voz: después de validar el banco.
+- Red autónoma (hotspot en la Pi), GPS, voz. LiDAR: solo visualización; aún no frena al robot.

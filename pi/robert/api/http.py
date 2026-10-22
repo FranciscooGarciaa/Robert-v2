@@ -17,3 +17,9 @@ def post_stop(request: Request) -> dict:
 @router.get("/health")
 def health(request: Request) -> dict:
     return {"ok": True, "esp32_connected": request.app.state.robot.esp32.connected}
+
+
+@router.get("/lidar/scan")
+def lidar_scan(request: Request) -> dict:
+    lidar = request.app.state.robot.lidar
+    return {"connected": lidar.connected, "bins": lidar.bins}

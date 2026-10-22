@@ -5,7 +5,7 @@ from robert.main import create_app
 
 
 def make_client():
-    app = create_app(Settings(), start_esp32=False)
+    app = create_app(Settings(), start_esp32=False, start_lidar=False)
     return TestClient(app), app
 
 

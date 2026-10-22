@@ -19,6 +19,12 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def _bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Settings:
     esp32_host: str = "robert-motor.local"
@@ -29,6 +35,12 @@ class Settings:
     max_speed: int = 180                 # cap applied to every manual command
     deadman_ms: int = 300                # PWA must refresh drive within this
     state_push_hz: float = 10.0          # state broadcast rate to PWA clients
+    lidar_enabled: bool = True
+    lidar_port: str = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"  # CH340
+    lidar_baud: int = 230400
+    lidar_offset_deg: float = 0.0        # added after mapping to the robot frame
+    lidar_clockwise: bool = True         # sensor angles grow clockwise from above
+    lidar_push_hz: float = 5.0           # scan broadcast rate to PWA clients
     http_host: str = "0.0.0.0"
     http_port: int = 8000
     frontend_dir: Path = ROOT.parent / "frontend"
@@ -49,6 +61,12 @@ class Settings:
             max_speed=max(0, min(255, int(e.get("MAX_SPEED", cls.max_speed)))),
             deadman_ms=int(e.get("DEADMAN_MS", cls.deadman_ms)),
             state_push_hz=float(e.get("STATE_PUSH_HZ", cls.state_push_hz)),
+            lidar_enabled=_bool(e.get("LIDAR_ENABLED"), cls.lidar_enabled),
+            lidar_port=e.get("LIDAR_PORT", cls.lidar_port),
+            lidar_baud=int(e.get("LIDAR_BAUD", cls.lidar_baud)),
+            lidar_offset_deg=float(e.get("LIDAR_OFFSET_DEG", cls.lidar_offset_deg)),
+            lidar_clockwise=_bool(e.get("LIDAR_CLOCKWISE"), cls.lidar_clockwise),
+            lidar_push_hz=float(e.get("LIDAR_PUSH_HZ", cls.lidar_push_hz)),
             http_host=e.get("HTTP_HOST", cls.http_host),
             http_port=int(e.get("HTTP_PORT", cls.http_port)),
             frontend_dir=Path(e.get("FRONTEND_DIR", cls.frontend_dir)),

@@ -15,6 +15,7 @@
     <div class="links">
       <span id="link-pi" class="pill bad">Pi: —</span>
       <span id="link-esp" class="pill bad">ESP32: —</span>
+      <span id="link-lidar" class="pill bad">LiDAR: —</span>
     </div>
   </header>
 
@@ -23,6 +24,14 @@
     <div class="tile"><span class="label">Movimiento</span><span id="motion" class="value">—</span></div>
     <div class="tile"><span class="label">Salida L / R</span><span id="output" class="value">—</span></div>
     <div class="tile"><span class="label">Failsafe</span><span id="failsafe" class="value">—</span></div>
+  </section>
+
+  <section class="radar">
+    <canvas id="radar" aria-label="Radar LiDAR, frente arriba"></canvas>
+    <div class="radar-info">
+      <span id="lidar-info">sin datos</span>
+      <button id="radar-zoom" type="button">Escala 2 m</button>
+    </div>
   </section>
 
   <section class="pad" aria-label="Control de dirección">

@@ -3,6 +3,8 @@
 Client -> Pi:  {"type":"drive","left":int,"right":int}  (re-send every ~100 ms)
                {"type":"stop"}
 Pi -> Client:  {"type":"state", ...RobotState.snapshot(), "max_speed": int}
+               {"type":"scan","bins":[360 x mm]}  (LiDAR, robot frame,
+               bin i = i..i+1 degrees clockwise from the front, 0 = no return)
 
 A driver that disconnects stops the robot (first safety layer; the ESP32
 watchdog is the second).
@@ -42,7 +44,18 @@ async def control_socket(ws: WebSocket) -> None:
             await ws.send_text(json.dumps(snap))
             await asyncio.sleep(period)
 
-    pusher = asyncio.create_task(push_state())
+    async def push_scan() -> None:
+        period = 1 / app.state.settings.lidar_push_hz
+        lidar = app.state.robot.lidar
+        sent = None
+        while True:
+            bins = lidar.bins
+            if bins is not None and bins is not sent:
+                sent = bins
+                await ws.send_text(json.dumps({"type": "scan", "bins": bins}))
+            await asyncio.sleep(period)
+
+    pushers = [asyncio.create_task(push_state()), asyncio.create_task(push_scan())]
     try:
         while True:
             try:
@@ -62,6 +75,7 @@ async def control_socket(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        pusher.cancel()
+        for task in pushers:
+            task.cancel()
         motion.release(client_id)
         log.info("%s disconnected", client_id)

@@ -136,13 +136,98 @@ function render(state) {
   fs.className = "value" + (e.failsafe && !["none", "boot"].includes(e.failsafe) ? " warn" : "");
 }
 
+// --- LiDAR radar ---------------------------------------------------------------
+// bins[i] = nearest return (mm) between i and i+1 degrees, clockwise from the
+// robot front; 0 = nothing seen. Front is drawn up.
+
+const RADAR_RANGES_M = [1, 2, 4, 8];
+const radar = $("radar");
+const ctx = radar.getContext("2d");
+let radarRange = 2;
+let lastBins = null;
+
+try {
+  const saved = Number(localStorage.getItem("robert.radarRange"));
+  if (RADAR_RANGES_M.includes(saved)) radarRange = saved;
+} catch (_) {}
+
+function css(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function drawRadar() {
+  const dpr = window.devicePixelRatio || 1;
+  const size = Math.round(radar.clientWidth * dpr);
+  if (!size) return;
+  if (radar.width !== size) { radar.width = size; radar.height = size; }
+  const c = size / 2;
+  const scale = (c * 0.95) / (radarRange * 1000); // px per mm
+  ctx.clearRect(0, 0, size, size);
+
+  // Range rings every metre (every 2 m at the 8 m scale) and the front axis.
+  ctx.strokeStyle = css("--grid");
+  ctx.fillStyle = css("--muted");
+  ctx.lineWidth = dpr;
+  ctx.font = `${11 * dpr}px system-ui, sans-serif`;
+  const ringStep = radarRange > 4 ? 2 : radarRange > 1 ? 1 : 0.5;
+  for (let m = ringStep; m <= radarRange; m += ringStep) {
+    ctx.beginPath();
+    ctx.arc(c, c, m * 1000 * scale, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.fillText(`${m} m`, c + 3 * dpr, c - m * 1000 * scale + 12 * dpr);
+  }
+  ctx.beginPath();
+  ctx.moveTo(c, c);
+  ctx.lineTo(c, c - radarRange * 1000 * scale);
+  ctx.stroke();
+
+  // Robot marker (not to scale), pointing to the front.
+  const m = 9 * dpr;
+  ctx.fillStyle = css("--accent");
+  ctx.beginPath();
+  ctx.moveTo(c, c - m);
+  ctx.lineTo(c + m * 0.7, c + m * 0.7);
+  ctx.lineTo(c - m * 0.7, c + m * 0.7);
+  ctx.closePath();
+  ctx.fill();
+
+  if (!lastBins) return;
+  ctx.fillStyle = css("--point");
+  const r = Math.max(1.5, 2 * dpr);
+  for (let i = 0; i < lastBins.length; i++) {
+    const d = lastBins[i];
+    if (!d || d > radarRange * 1000) continue;
+    const a = ((i + 0.5) * Math.PI) / 180;
+    ctx.fillRect(c + Math.sin(a) * d * scale - r / 2, c - Math.cos(a) * d * scale - r / 2, r, r);
+  }
+}
+
+$("radar-zoom").addEventListener("click", () => {
+  radarRange = RADAR_RANGES_M[(RADAR_RANGES_M.indexOf(radarRange) + 1) % RADAR_RANGES_M.length];
+  $("radar-zoom").textContent = `Escala ${radarRange} m`;
+  try { localStorage.setItem("robert.radarRange", radarRange); } catch (_) {}
+  drawRadar();
+});
+$("radar-zoom").textContent = `Escala ${radarRange} m`;
+window.addEventListener("resize", drawRadar);
+
+function renderLidar(l) {
+  const ok = l.enabled && l.connected && l.scan_age_ms != null && l.scan_age_ms < 1000;
+  setPill($("link-lidar"), ok, !l.enabled ? "LiDAR: off" : ok ? "LiDAR: ok" : "LiDAR: sin datos");
+  if (!ok && lastBins) { lastBins = null; drawRadar(); }
+  $("lidar-info").textContent = !ok ? "sin datos"
+    : l.nearest_mm == null ? "nada a la vista"
+    : `más cercano ${(l.nearest_mm / 1000).toFixed(2)} m a ${l.nearest_deg}° · ${l.scan_hz ?? "—"} Hz · ${l.points_per_scan} pts`;
+}
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = () => setPill($("link-pi"), true, "Pi: conectado");
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === "state") render(msg);
+    if (msg.type === "state") { render(msg); renderLidar(msg.lidar); }
+    else if (msg.type === "scan") { lastBins = msg.bins; drawRadar(); }
   };
   ws.onclose = () => {
     setPill($("link-pi"), false, "Pi: desconectado");
@@ -155,4 +240,5 @@ function connect() {
   };
 }
 
+drawRadar();
 connect();
