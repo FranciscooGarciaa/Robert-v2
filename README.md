@@ -17,14 +17,16 @@ PWA (navegador) ──WS──▶ Raspberry Pi (pi/, FastAPI) ──WS──▶ 
 
 | ESP32 | Destino |
 |---|---|
-| GPIO25 | MDD10A PWM1 (izquierda) |
+| GPIO25 | MDD10A PWM1 (M1 = ruedas derechas) |
 | GPIO26 | MDD10A DIR1 |
-| GPIO27 | MDD10A PWM2 (derecha) |
+| GPIO27 | MDD10A PWM2 (M2 = ruedas izquierdas) |
 | GPIO33 | MDD10A DIR2 |
 | GPIO32 | HC‑SR04 TRIG |
 | GPIO35 | HC‑SR04 ECHO **vía divisor 1k/2k** |
 
-Adelante = DIR1 HIGH + DIR2 HIGH. Todo esto vive en `firmware/robert_motor/config.h`.
+**Frente = lado del HC‑SR04.** Visto desde ahí: M2 = izquierda, M1 = derecha, adelante = DIR LOW en ambos
+(validado en banco el 2026‑10‑22; el handoff original describía el robot desde el otro extremo).
+Todo esto vive en `firmware/robert_motor/config.h`.
 
 ## Firmware ESP32
 
@@ -35,6 +37,14 @@ arduino-cli compile --fqbn esp32:esp32:esp32 firmware/robert_motor
 # Flashear: LiPo DESCONECTADA, solo USB
 arduino-cli upload  --fqbn esp32:esp32:esp32 -p /dev/cu.usbserial-0001 firmware/robert_motor
 arduino-cli monitor -p /dev/cu.usbserial-0001 -c baudrate=115200
+```
+
+Actualizar por Wi‑Fi (OTA, sin USB; los motores se paran durante la subida):
+
+```sh
+arduino-cli compile --fqbn esp32:esp32:esp32 --output-dir build firmware/robert_motor
+python3 ~/Library/Arduino15/packages/esp32/hardware/esp32/3.3.12/tools/espota.py \
+  -i robert-motor.local -p 3232 -a "$ESP32_TOKEN" -f build/robert_motor.ino.bin
 ```
 
 Operación: USB desconectado, LiPo conectada. El ESP32 anuncia `robert-motor.local`, WebSocket en el puerto 81.

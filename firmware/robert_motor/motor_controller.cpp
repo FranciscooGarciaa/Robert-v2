@@ -25,8 +25,8 @@ void applySide(int pwmPin, int dirPin, int speed) {
 }
 
 void apply() {
-  applySide(cfg::PWM1, cfg::DIR1, oLeft);
-  applySide(cfg::PWM2, cfg::DIR2, oRight);
+  applySide(cfg::LEFT_PWM, cfg::LEFT_DIR, oLeft);
+  applySide(cfg::RIGHT_PWM, cfg::RIGHT_DIR, oRight);
 }
 
 // Move current toward target by at most step; never crosses zero in one step

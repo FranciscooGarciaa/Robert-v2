@@ -56,9 +56,9 @@ class Esp32Client:
                 while isinstance(exc, ExceptionGroup) and exc.exceptions:
                     exc = exc.exceptions[0]
                 if self._state.esp32.connected:
-                    log.warning("ESP32 link lost: %s", exc)
+                    log.warning("ESP32 link lost: %r", exc)
                 else:
-                    log.debug("ESP32 connect failed: %s", exc)
+                    log.debug("ESP32 connect failed: %r", exc)
             finally:
                 if self._state.esp32.connected:
                     self._state.esp32.connected = False

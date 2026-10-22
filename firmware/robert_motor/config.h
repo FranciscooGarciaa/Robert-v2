@@ -7,18 +7,27 @@ namespace cfg {
 
 // ---------------------------------------------------------------------------
 // VALIDATED PIN MAPPING — physically tested. Do not change without measurement.
-// M1 = left side (two motors in parallel), M2 = right side.
+// M1/M2 = the two MDD10A channels (two motors in parallel each).
+// Which channel is left/right is defined below, from the robot front.
 // ---------------------------------------------------------------------------
-constexpr int PWM1 = 25;  // left  PWM  (MDD10A PWM1)
-constexpr int DIR1 = 26;  // left  DIR  (MDD10A DIR1)
-constexpr int PWM2 = 27;  // right PWM  (MDD10A PWM2)
-constexpr int DIR2 = 33;  // right DIR  (MDD10A DIR2)
+constexpr int PWM1 = 25;  // MDD10A PWM1 (M1)
+constexpr int DIR1 = 26;  // MDD10A DIR1
+constexpr int PWM2 = 27;  // MDD10A PWM2 (M2)
+constexpr int DIR2 = 33;  // MDD10A DIR2
 
 constexpr int TRIG_PIN = 32;  // HC-SR04 TRIG
 constexpr int ECHO_PIN = 35;  // HC-SR04 ECHO via 1k/2k divider (input-only pin)
 
-// Validated polarity: forward = DIR HIGH on both sides.
-constexpr uint8_t DIR_FORWARD_LEVEL = HIGH;
+// Robot frame: FRONT = the HC-SR04 side (so the obstacle veto guards the
+// direction of travel). Verified on the bench 2026-10-22: seen from that
+// front, M2 drives the left wheels, M1 the right ones, and forward is
+// DIR LOW on both (the original handoff described the robot from the other
+// end, hence "M1 = left, forward = DIR HIGH" there).
+constexpr int LEFT_PWM = PWM2;
+constexpr int LEFT_DIR = DIR2;
+constexpr int RIGHT_PWM = PWM1;
+constexpr int RIGHT_DIR = DIR1;
+constexpr uint8_t DIR_FORWARD_LEVEL = LOW;
 
 // ---------------------------------------------------------------------------
 // Motors
