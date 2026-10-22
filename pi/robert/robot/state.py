@@ -42,10 +42,24 @@ class LidarState:
 
 
 @dataclass
+class NavState:
+    guard: str = "off"                 # ok | slow | blocked | blind | off
+    limited_by: str | None = None      # why the guard is slowing/stopping
+    out_left: int = 0                  # command after the guard (sent to the ESP32)
+    out_right: int = 0
+    path: list[list[float]] = field(default_factory=list)  # [x, y] m, x fwd, y left
+    clearance: dict[str, float | None] = field(default_factory=dict)
+    auto: str | None = None            # explore | None
+    goal_deg: float | None = None      # explore target bearing, + = left
+    stuck: bool = False
+    footprint: list[float] = field(default_factory=list)   # [length, width, margin] m
+
+
+@dataclass
 class MotionState:
     target_left: int = 0
     target_right: int = 0
-    mode: str = "idle"           # idle | manual
+    mode: str = "idle"           # idle | manual | auto
     owner: str | None = None     # PWA client currently driving
     last_stop_reason: str | None = "startup"
 
@@ -56,6 +70,7 @@ class RobotState:
     ultrasonic: UltrasonicState = field(default_factory=UltrasonicState)
     motion: MotionState = field(default_factory=MotionState)
     lidar: LidarState = field(default_factory=LidarState)
+    nav: NavState = field(default_factory=NavState)
     started_at: float = field(default_factory=time.monotonic)
 
     def snapshot(self) -> dict:

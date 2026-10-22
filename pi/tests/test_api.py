@@ -50,3 +50,15 @@ def test_frontend_served():
         r = client.get("/")
         assert r.status_code == 200
         assert "Robert" in r.text
+
+
+def test_auto_arm_over_websocket_and_disarm_on_disconnect():
+    client, app = make_client()
+    with client:
+        with client.websocket_connect("/ws") as ws:
+            ws.receive_json()
+            ws.send_json({"type": "auto", "mode": "explore"})
+            ws.send_json({"type": "auto", "mode": "warp"})  # unknown modes are ignored
+            ws.receive_json()
+        client.get("/api/health")
+        assert not app.state.autonomy.active

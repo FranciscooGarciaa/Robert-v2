@@ -1,13 +1,14 @@
 """PWA WebSocket: receives drive/stop, pushes robot state.
 
 Client -> Pi:  {"type":"drive","left":int,"right":int}  (re-send every ~100 ms)
+               {"type":"auto","mode":"explore"}       (re-send every ~100 ms to stay armed)
                {"type":"stop"}
 Pi -> Client:  {"type":"state", ...RobotState.snapshot(), "max_speed": int}
                {"type":"scan","bins":[360 x mm]}  (LiDAR, robot frame,
                bin i = i..i+1 degrees clockwise from the front, 0 = no return)
 
 A driver that disconnects stops the robot (first safety layer; the ESP32
-watchdog is the second).
+watchdog is the second). Manual driving takes over from autonomy.
 """
 
 import asyncio
@@ -30,6 +31,7 @@ def _as_int(v) -> int | None:
 async def control_socket(ws: WebSocket) -> None:
     app = ws.app
     motion = app.state.motion
+    autonomy = app.state.autonomy
     client_id = f"pwa-{next(_ids)}"
     await ws.accept()
     log.info("%s connected from %s", client_id, ws.client.host if ws.client else "?")
@@ -62,6 +64,7 @@ async def control_socket(ws: WebSocket) -> None:
                 msg = json.loads(await ws.receive_text())
             except ValueError:
                 motion.release(client_id)
+                autonomy.release(client_id)
                 continue
             kind = msg.get("type") if isinstance(msg, dict) else None
             if kind == "stop":
@@ -71,11 +74,17 @@ async def control_socket(ws: WebSocket) -> None:
                 if left is None or right is None:
                     motion.release(client_id)  # malformed drive -> fail toward stop
                     continue
+                autonomy.disarm()
                 motion.drive(left, right, client_id)
+            elif kind == "auto":
+                mode = msg.get("mode")
+                if isinstance(mode, str):
+                    autonomy.arm(mode, client_id)
     except WebSocketDisconnect:
         pass
     finally:
         for task in pushers:
             task.cancel()
         motion.release(client_id)
+        autonomy.release(client_id)
         log.info("%s disconnected", client_id)

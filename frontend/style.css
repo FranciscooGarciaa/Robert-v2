@@ -2,6 +2,9 @@
   --bg: #111418;
   --grid: #2a313b;
   --point: #4ade80;
+  --path-ok: #4ade80;
+  --path-slow: #e0a526;
+  --path-blocked: #e5484d;
   --panel: #1b2027;
   --text: #e8ebef;
   --muted: #8b95a3;
@@ -45,6 +48,17 @@ h1 { font-size: 22px; margin: 0; }
 .radar canvas { display: block; width: 100%; max-height: 320px; aspect-ratio: 1; margin: 0 auto; }
 .radar-info { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); padding: 4px 4px 0; }
 .radar-info button { border: 0; border-radius: 8px; padding: 4px 10px; background: var(--bg); color: var(--text); font-size: 13px; }
+
+.guard-info { min-height: 18px; font-size: 13px; padding: 2px 4px 0; color: var(--warn); }
+.guard-info.bad { color: var(--bad); }
+
+.auto { margin: 0 0 14px; }
+.explore {
+  width: 100%; padding: 14px 0; border: 2px solid var(--accent); border-radius: 14px;
+  background: transparent; color: var(--text); font-size: 18px; font-weight: 600;
+}
+.explore[aria-pressed="true"] { background: var(--accent); }
+.explore:disabled { opacity: 0.35; }
 
 .pad {
   display: grid;

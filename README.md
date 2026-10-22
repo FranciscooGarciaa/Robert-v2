@@ -79,6 +79,33 @@ Calibración: objeto justo delante → `nearest_deg` en `/api/state` debería se
 `LIDAR_OFFSET_DEG` en `pi/.env` (y `LIDAR_CLOCKWISE=false` si al girar el objeto se mueve al revés).
 Solo un proceso puede abrir el puerto: para usarlo desde ROS, `LIDAR_ENABLED=false` y reiniciar el servicio.
 
+## Navegación: frenada asistida y modo Explorar (`pi/robert/nav/`)
+
+Control **reactivo** (sin mapa ni odometría: no hay encoders). Cada vuelta del LiDAR se convierte en puntos
+del marco del robot (`scan.py`) y se barre la huella del robot + margen a lo largo del camino (`geometry.py`).
+
+- **Guard** (`guard.py`): todo comando, manual o autónomo, pasa por `MotionController.current_target()`, que lo
+  limita: frena entre la distancia de "frenar" y la de "parar" y corta solo la dirección peligrosa
+  (marcha atrás o giro libres siguen permitidos). Sin LiDAR reciente: manual limitado a 80, autónomo parado.
+- **Explorar** (`explore.py` + `planner.py` + `autonomy.py`): elige el pasillo más largo con poco giro e histéresis,
+  y entre ~26 arcos + giros en el sitio escoge el mejor que puede parar a tiempo. Solo funciona mientras la PWA
+  lo mantiene armado (botón Explorar, re‑enviado cada 100 ms); STOP, mover a mano, cerrar la pestaña, LiDAR
+  ciego o atasco (>8 s sin avanzar) lo desactivan. Debajo siguen el dead‑man de la Pi y el ESP32.
+- Coste medido en la Pi 4: ~7 ms por ciclo a 10 Hz.
+
+Calibración (robot en el suelo, pared delante a ≥2 m, mano cerca del XT60):
+
+```sh
+python tools/calibrate_motion.py --host robert.local:8000 offset             # objeto justo delante
+python tools/calibrate_motion.py --host robert.local:8000 forward --pwm 100  # -> MPS_PER_PWM
+python tools/calibrate_motion.py --host robert.local:8000 spin --pwm 100 --mps-per-pwm <valor>  # -> TRACK_EFF_M
+```
+Y medir con cinta largo/ancho del robot y posición del LiDAR (`ROBOT_*`, `LIDAR_X_M/Y_M` en `pi/.env`).
+`tools/record_scans.py` graba vueltas reales (los tests reproducen `pi/tests/data/room.jsonl`).
+
+**El LiDAR solo ve en su plano**: bordillos, escalones hacia abajo y objetos bajos quedan para el HC‑SR04
+(fase de calle: inclinarlo hacia el suelo, ver plan).
+
 ## Pruebas de banco (RUEDAS EN EL AIRE)
 
 Desde el Mac, sin Pi (`export ESP32_TOKEN=...`):
@@ -111,4 +138,4 @@ Detalles en `firmware/robert_motor/protocol.h`.
 
 - HC‑SR04 sin eco se trata como "despejado" (también si el sensor se desconecta); `us_timeouts` en telemetría lo hace visible.
 - PWA por HTTP en LAN: no instalable como app (requiere HTTPS); funciona como página.
-- Red autónoma (hotspot en la Pi), GPS, voz. LiDAR: solo visualización; aún no frena al robot.
+- Pendiente: calibración en el suelo, red propia (hotspot), HC‑SR04 inclinado para bordillos, Seguirme (cámara + LiDAR; la cámara aún no se detecta), GPS, voz.

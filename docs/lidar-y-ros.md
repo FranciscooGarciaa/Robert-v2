@@ -123,8 +123,14 @@ Siguientes ejercicios, de menos a más:
    (p. ej. `rf2o_laser_odometry`) o añadir encoders/IMU. Con 1 GB de RAM en la Pi, el SLAM
    conviene ejecutarlo en el Mac.
 
-## 6. Seguridad
+## 6. Lo que ya hace Robert con el LiDAR (sin ROS)
 
-Ahora el LiDAR **solo se visualiza**: no frena al robot. Si en el futuro un nodo ROS envía
+`pi/robert/nav/` implementa los ejercicios 1, 2 y 5 de la lista anterior de forma vectorizada con numpy:
+frenada asistida para cualquier comando y un modo Explorar reactivo (ver README). Es un buen sitio para
+leer código real de un sensor → decisión.
+
+## 7. Seguridad
+
+El LiDAR frena al robot a través del guard de la Pi. Si en el futuro un nodo ROS envía
 movimiento, debe pasar por el backend (dead‑man de 300 ms) y el ESP32 sigue teniendo la
 última palabra (watchdog de 500 ms y veto del HC‑SR04). Pruebas de autonomía: ruedas en el aire.
