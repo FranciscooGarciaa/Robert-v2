@@ -172,12 +172,26 @@ function render(state) {
     : nav.limited_by ? `Frenada LiDAR: ${nav.limited_by}` : "";
   gi.classList.toggle("bad", nav.stuck || nav.guard === "blocked");
 
+  renderVoice(state.voice);
+
   const e = state.esp32;
   $("output").textContent = espConnected ? `${e.left_out} / ${e.right_out}` : "—";
 
   const fs = $("failsafe");
   fs.textContent = e.failsafe ?? "—";
   fs.className = "value" + (e.failsafe && !["none", "boot"].includes(e.failsafe) ? " warn" : "");
+}
+
+const VOICE_LABELS = {
+  offline: "Voz: apagada", idle: "Voz: esperando", listening: "Voz: escuchando…",
+  thinking: "Voz: pensando…", speaking: "Voz: hablando",
+};
+
+function renderVoice(v) {
+  if (!v) return;
+  setPill($("voice-state"), v.state !== "offline", VOICE_LABELS[v.state] ?? `Voz: ${v.state}`);
+  $("voice-heard").textContent = v.heard ? `Oyó: “${v.heard}”` : "";
+  $("voice-reply").textContent = v.reply ? `Robert: “${v.reply}”` : "";
 }
 
 // --- LiDAR radar ---------------------------------------------------------------

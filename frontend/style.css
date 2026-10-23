@@ -60,6 +60,11 @@ h1 { font-size: 22px; margin: 0; }
 .explore[aria-pressed="true"] { background: var(--accent); }
 .explore:disabled { opacity: 0.35; }
 
+.voice { background: var(--panel); border-radius: 12px; padding: 8px 12px; margin: 0 0 14px; }
+.voice-line { margin: 6px 0 0; font-size: 14px; }
+.voice-line:empty { display: none; }
+#voice-heard { color: var(--muted); }
+
 .pad {
   display: grid;
   grid-template-areas: ". f ." "l . r" ". b .";

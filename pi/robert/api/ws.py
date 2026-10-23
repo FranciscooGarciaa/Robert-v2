@@ -75,6 +75,7 @@ async def control_socket(ws: WebSocket) -> None:
                     motion.release(client_id)  # malformed drive -> fail toward stop
                     continue
                 autonomy.disarm()
+                app.state.nudger.cancel()
                 motion.drive(left, right, client_id)
             elif kind == "auto":
                 mode = msg.get("mode")

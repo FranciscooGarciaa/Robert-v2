@@ -21,6 +21,7 @@ from .nav.guard import CollisionGuard
 from .nav.model import RobotModel
 from .nav.scan import ScanView
 from .robot.motion import MotionController
+from .robot.nudge import Nudger
 from .robot.state import RobotState
 
 log = logging.getLogger("robert")
@@ -36,6 +37,7 @@ def create_app(settings: Settings, start_esp32: bool = True,
                            settings.guard_blind_max_speed, settings.guard_enabled)
     motion = MotionController(robot, settings.max_speed, settings.deadman_ms, guard=guard)
     autonomy = Autonomy(settings, robot, motion, scan, model)
+    nudger = Nudger(motion)
     esp32 = Esp32Client(settings, robot, motion)
     lidar = None
     if settings.lidar_enabled and start_lidar:
@@ -71,6 +73,7 @@ def create_app(settings: Settings, start_esp32: bool = True,
     app.state.robot = robot
     app.state.motion = motion
     app.state.autonomy = autonomy
+    app.state.nudger = nudger
     app.include_router(http.router)
     app.include_router(ws.router)
     if settings.frontend_dir.is_dir():

@@ -56,6 +56,14 @@ class NavState:
 
 
 @dataclass
+class VoiceState:
+    state: str = "offline"             # offline | idle | listening | thinking | speaking
+    heard: str | None = None           # last thing Robert understood
+    reply: str | None = None           # last thing Robert said
+    updated: float | None = None       # time.monotonic() of the last report
+
+
+@dataclass
 class MotionState:
     target_left: int = 0
     target_right: int = 0
@@ -71,6 +79,7 @@ class RobotState:
     motion: MotionState = field(default_factory=MotionState)
     lidar: LidarState = field(default_factory=LidarState)
     nav: NavState = field(default_factory=NavState)
+    voice: VoiceState = field(default_factory=VoiceState)
     started_at: float = field(default_factory=time.monotonic)
 
     def snapshot(self) -> dict:
@@ -83,5 +92,10 @@ class RobotState:
         lidar.pop("bins")
         last = lidar.pop("last_scan")
         lidar["scan_age_ms"] = None if last is None else int((now - last) * 1000)
+        voice = data["voice"]
+        last = voice.pop("updated")
+        # The voice service reports at least every few seconds; silence = it is down.
+        if last is None or now - last > 15:
+            voice["state"] = "offline"
         data["system"] = {"uptime_s": int(now - self.started_at)}
         return data

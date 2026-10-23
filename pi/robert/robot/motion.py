@@ -68,10 +68,10 @@ class MotionController:
         for listener in self._stop_listeners:
             listener()
 
-    def release(self, owner: str) -> None:
-        """A client went away; stop if it was the one driving."""
+    def release(self, owner: str, reason: str = "driver_disconnected") -> None:
+        """A driver is done (or went away); stop if it is still the one driving."""
         if self._state.motion.owner == owner:
-            self.stop("driver_disconnected")
+            self.stop(reason)
 
     def current_target(self) -> tuple[int, int]:
         """What to send to the ESP32 now (called every send tick)."""
