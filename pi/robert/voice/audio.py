@@ -19,6 +19,8 @@ FRAME = 1280                 # 80 ms at 16 kHz: openWakeWord's native frame
 STARTUP_DISCARD_S = 0.5      # the codec ADC thumps when capture starts
 OUT_RATE = 24000             # Gemini Live speaks 24 kHz mono PCM16
 OUT_BUFFER_S = 0.1           # aplay buffer: small, so audio starts quickly
+OUT_IDLE_CLOSE_S = 1.5       # close aplay when quiet: an open stream keeps the DAC
+                             # powered and the amplifier hisses
 
 
 class Mic:
@@ -78,9 +80,11 @@ class Mic:
 
 
 class StreamPlayer:
-    """One long-lived `aplay` fed raw 24 kHz PCM as it arrives.
+    """An `aplay` fed raw 24 kHz PCM as it arrives, open only while sound flows.
 
     Writes go through a thread (a full pipe must never block the event loop).
+    The process stays open across the chunks of a reply and the turns of a
+    conversation, and is closed after OUT_IDLE_CLOSE_S of silence.
     `busy` stays true until the estimated end of what was written, so the
     caller knows when the speaker has really gone quiet.
     """
@@ -99,9 +103,24 @@ class StreamPlayer:
              "-c", "1", f"--buffer-time={int(OUT_BUFFER_S * 1e6)}"],
             stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
+    def _close(self) -> None:
+        if self._proc is not None:
+            try:
+                self._proc.stdin.close()
+                self._proc.wait(timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                self._proc.kill()
+            self._proc = None
+
     def _run(self) -> None:
         while True:
-            chunk = self._q.get()
+            try:
+                chunk = self._q.get(timeout=0.5)
+            except queue.Empty:
+                if self._proc is not None and self.remaining_s() == 0 and \
+                        time.monotonic() - self._ends_at > OUT_IDLE_CLOSE_S:
+                    self._close()
+                continue
             if self._proc is None or self._proc.poll() is not None:
                 self._proc = self._open()
             try:

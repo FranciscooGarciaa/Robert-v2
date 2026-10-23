@@ -141,3 +141,11 @@ def test_describe_state_never_uses_raw_lidar_distance():
                            "nav": {"clearance": {}}, "motion": {"mode": "idle"}})
     assert "0.1" not in text and "sin datos del LiDAR" in text
     assert describe_state(None) == "Estado del robot: desconocido."
+
+
+def test_wake_phrase_and_prompt():
+    from robert.voice.live import SYSTEM_PROMPT, wake_phrase
+
+    assert wake_phrase("hey_jarvis") == "Hey Jarvis"
+    assert wake_phrase("/home/x/robert-models/robert.onnx") == "Robert"
+    assert '"Robert"' in SYSTEM_PROMPT.format(wake="Robert")

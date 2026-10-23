@@ -239,3 +239,12 @@ def test_real_scans_run_through_guard_planner_and_explorer():
         assert pts.shape[1] > 100
         assert abs(plan.v) <= V_MAX and math.isfinite(plan.w)
     assert worst < 0.05  # one full nav tick; ~10x margin on the Pi 4 budget
+
+
+def test_guard_observe_reports_clearance_without_driving():
+    g, nav, lidar, clock = guard_for([wall(1.0)])
+    g.observe()
+    assert abs(nav.clearance["front"] - (1.0 - MODEL.half_body[0])) < 0.02
+    clock.t += 1.0  # stale scan
+    g.observe()
+    assert nav.clearance == {}

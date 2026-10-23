@@ -16,7 +16,7 @@ from .audio import Mic, StreamPlayer
 from .backend import Backend
 from .config import VoiceSettings
 from .listener import Vad, WakeWord
-from .live import LiveConversation, session_config
+from .live import LiveConversation, session_config, wake_phrase
 
 log = logging.getLogger("robert.voice")
 
@@ -40,7 +40,7 @@ class VoiceService:
         # Muted through the beep (so it is not sent as speech); reopened right after.
         asyncio.get_running_loop().call_later(self.player.remaining_s(), self.mic.mute, False)
         state = await asyncio.to_thread(self.backend.state)
-        talk = LiveConversation(self.client, s.live_model, session_config(s.voice, s.silence_ms, state),
+        talk = LiveConversation(self.client, s.live_model, session_config(s.voice, s.silence_ms, state, wake_phrase(s.wake_model)),
                                 self.mic, self.player, self.vad, self.backend, s.idle_s)
         try:
             await talk.run()

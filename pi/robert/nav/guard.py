@@ -34,6 +34,11 @@ class CollisionGuard:
         self.blind_max_speed = blind_max_speed
         self.enabled = enabled
 
+    def observe(self) -> None:
+        """Refreshes the clearances even when nothing is driving (for the PWA and voice)."""
+        points = self.scan.points()
+        self.nav.clearance = {} if points is None else clearances(points, self.model)
+
     def limit(self, left: int, right: int, autonomous: bool) -> tuple[int, int]:
         nav = self.nav
         nav.path = []

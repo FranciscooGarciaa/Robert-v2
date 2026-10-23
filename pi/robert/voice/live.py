@@ -13,6 +13,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from .audio import MIC_RATE
 
@@ -34,7 +35,9 @@ Herramientas:
 - estado_robot: úsala si te preguntan qué ves, qué tienes cerca o cómo estás. No inventes
   distancias ni datos que no te dé.
 - despedirse: cuando la persona se despida o diga que ya está.
-Explorar o seguir a alguien no se activa por voz: di que se hace desde la app."""
+Explorar o seguir a alguien no se activa por voz: di que se hace desde la app.
+Te despiertan diciendo "{wake}"; es la señal de activación, no tu nombre. Si solo oyes
+eso, no saludes ni te presentes: espera a la petición o di como mucho "¿Sí?"."""
 
 
 def describe_state(state: dict | None) -> str:
@@ -55,7 +58,13 @@ def describe_state(state: dict | None) -> str:
     return "Estado del robot: " + ", ".join(facts) + "."
 
 
-def session_config(voice: str, silence_ms: int, state: dict | None):
+def wake_phrase(model: str) -> str:
+    """'hey_jarvis' or '/path/robert.onnx' -> 'Hey Jarvis' / 'Robert'."""
+    name = Path(model).stem.split("_v0")[0]
+    return name.replace("_", " ").title()
+
+
+def session_config(voice: str, silence_ms: int, state: dict | None, wake: str):
     from google.genai import types
 
     def fn(name, description, parameters=None):
@@ -71,7 +80,7 @@ def session_config(voice: str, silence_ms: int, state: dict | None):
     ])]
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
-        system_instruction=SYSTEM_PROMPT + "\n\n" + describe_state(state),
+        system_instruction=SYSTEM_PROMPT.format(wake=wake) + "\n\n" + describe_state(state),
         tools=tools,
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),

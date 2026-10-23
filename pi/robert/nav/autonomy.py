@@ -7,7 +7,6 @@ through MotionController, so the dead-man, the collision guard and the
 ESP32 safety layers apply exactly as for manual driving.
 """
 
-import asyncio
 import logging
 import math
 import time
@@ -109,8 +108,3 @@ class Autonomy:
             left, right = round(left * self._max_pwm / peak), round(right * self._max_pwm / peak)
         self._last_w = self._model.to_vw(left, right)[1]
         self._motion.drive(left, right, owner=f"auto:{self._nav.auto}", mode="auto")
-
-    async def run(self) -> None:
-        while True:
-            self.tick()
-            await asyncio.sleep(TICK_S)

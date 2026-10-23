@@ -16,7 +16,7 @@ from .api import http, ws
 from .config import Settings
 from .robot.esp32_client import Esp32Client
 from .robot.lidar import LidarReader, ScanAssembler
-from .nav.autonomy import Autonomy
+from .nav.autonomy import TICK_S, Autonomy
 from .nav.guard import CollisionGuard
 from .nav.model import RobotModel
 from .nav.scan import ScanView
@@ -47,10 +47,17 @@ def create_app(settings: Settings, start_esp32: bool = True,
             ScanAssembler(settings.lidar_offset_deg, settings.lidar_clockwise),
         )
 
+    async def nav_loop() -> None:
+        """Scan-rate loop: clearances for everyone, then one autonomy step."""
+        while True:
+            guard.observe()
+            autonomy.tick()
+            await asyncio.sleep(TICK_S)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         task = asyncio.create_task(esp32.run()) if start_esp32 else None
-        auto_task = asyncio.create_task(autonomy.run())
+        nav_task = asyncio.create_task(nav_loop())
         if lidar:
             lidar.start()
         log.info("backend up, ESP32 at %s", esp32.uri)
@@ -58,7 +65,7 @@ def create_app(settings: Settings, start_esp32: bool = True,
             yield
         finally:
             motion.stop("shutdown")
-            auto_task.cancel()
+            nav_task.cancel()
             if lidar:
                 lidar.stop()
             if task:
