@@ -12,14 +12,16 @@ HOME = Path.home()
 @dataclass(frozen=True)
 class VoiceSettings:
     gemini_api_key: str = ""
-    model: str = "gemini-3.5-flash-lite"         # understands the audio and replies
-    tts_model: str = "gemini-3.8-flash-lite-tts"
-    tts_voice: str = "Puck"
-    tts_timeout_s: float = 10.0                  # Gemini rejects deadlines under 10 s
-    model_timeout_s: float = 15.0
-    wake_model: str = "hey_jarvis"               # bundled name or path to a custom .onnx
+    # Speech-to-speech model; measured on the Pi 2026-10-23: ~0.5 s connect,
+    # 0.6-0.8 s from the end of speech to the first audio of the reply.
+    live_model: str = "gemini-3.8-live"
+    voice: str = "Puck"
+    silence_ms: int = 300           # server VAD: this much silence ends your turn
+    idle_s: float = 10.0            # no speech for this long ends the conversation
+    wake_model: str = "hey_jarvis"  # bundled name or path to a custom .onnx
     wake_threshold: float = 0.3
     piper_voice: Path = HOME / "robert-models/piper/es_ES-davefx-medium.onnx"
+    assets_dir: Path = HOME / "robert-models/voice"
     alsa_device: str = "plughw:CARD=seeed2micvoicec"
     backend_url: str = "http://127.0.0.1:8000"
 
@@ -30,14 +32,14 @@ class VoiceSettings:
         e = os.environ
         return cls(
             gemini_api_key=e.get("GEMINI_API_KEY", cls.gemini_api_key),
-            model=e.get("VOICE_MODEL", cls.model),
-            tts_model=e.get("VOICE_TTS_MODEL", cls.tts_model),
-            tts_voice=e.get("VOICE_TTS_VOICE", cls.tts_voice),
-            tts_timeout_s=float(e.get("VOICE_TTS_TIMEOUT_S", cls.tts_timeout_s)),
-            model_timeout_s=float(e.get("VOICE_MODEL_TIMEOUT_S", cls.model_timeout_s)),
+            live_model=e.get("VOICE_LIVE_MODEL", cls.live_model),
+            voice=e.get("VOICE_VOICE", cls.voice),
+            silence_ms=int(e.get("VOICE_SILENCE_MS", cls.silence_ms)),
+            idle_s=float(e.get("VOICE_IDLE_S", cls.idle_s)),
             wake_model=e.get("WAKE_MODEL", cls.wake_model),
             wake_threshold=float(e.get("WAKE_THRESHOLD", cls.wake_threshold)),
             piper_voice=Path(e.get("PIPER_VOICE", cls.piper_voice)),
+            assets_dir=Path(e.get("VOICE_ASSETS_DIR", cls.assets_dir)),
             alsa_device=e.get("VOICE_ALSA_DEVICE", cls.alsa_device),
             backend_url=e.get("VOICE_BACKEND_URL", cls.backend_url),
         )
