@@ -10,9 +10,6 @@ from .audio import Player, to_wav
 
 log = logging.getLogger("robert.voice.speak")
 
-TTS_STYLE = "Dilo con tono cercano, alegre y natural, a ritmo normal: "
-
-
 def _pcm_rate(mime: str) -> int:
     m = re.search(r"rate=(\d+)", mime or "")
     return int(m.group(1)) if m else 24000
@@ -42,7 +39,7 @@ class Speaker:
         from google.genai import types
 
         response = self._client.models.generate_content(
-            model=self._model, contents=TTS_STYLE + text,
+            model=self._model, contents=text,  # plain text: style prefixes get read aloud
             config=types.GenerateContentConfig(
                 response_modalities=["AUDIO"],
                 speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
