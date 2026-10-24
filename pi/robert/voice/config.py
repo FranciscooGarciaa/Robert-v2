@@ -16,7 +16,10 @@ class VoiceSettings:
     # 0.6-0.8 s from the end of speech to the first audio of the reply.
     live_model: str = "gemini-3.8-live"
     voice: str = "Puck"
-    silence_ms: int = 300           # server VAD: this much silence ends your turn
+    # Server VAD: this much silence ends your turn. 300 ms with high sensitivity cut
+    # people off at their first pause ("Quiero..."), and the rest was lost while
+    # Robert answered (half-duplex), so: 600 ms, low end-of-speech sensitivity.
+    silence_ms: int = 600
     idle_s: float = 10.0            # no speech for this long ends the conversation
     wake_model: str = "hey_jarvis"  # bundled name or path to a custom .onnx
     wake_threshold: float = 0.3

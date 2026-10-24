@@ -14,11 +14,11 @@ ssh_pi() { ssh $SSH_OPTS "$PI" "$@"; }
 if [ -z "${PW:-}" ]; then read -rsp "sudo password on the Pi: " PW; echo; fi
 
 if [ "$STEP" = audio ]; then
-  # Levels validated 2026-10-23 (see memory/README): mic +21 dB with HPF, output -12 dB.
+  # Levels validated 2026-10-23/24: mic +27 dB with HPF (talking from 2-3 m), output -12 dB.
   ssh_pi "PW='$PW' bash -s" <<'EOF'
     C=seeed2micvoicec
     amixer -q -c $C sset "Left PGA Mixer Line1L" on; amixer -q -c $C sset "Right PGA Mixer Line1R" on
-    amixer -q -c $C sset PGA 42; amixer -q -c $C sset "ADC HPF Cut-off" "0.0045xFs","0.0045xFs"
+    amixer -q -c $C sset PGA 54; amixer -q -c $C sset "ADC HPF Cut-off" "0.0045xFs","0.0045xFs"
     amixer -q -c $C sset PCM 103; amixer -q -c $C sset "HP DAC" 100%; amixer -q -c $C sset "Line DAC" 100%
     amixer -q -c $C sset HP 0; amixer -q -c $C sset Line 0
     printf '%s\n' "$PW" | sudo -S -p '' alsactl store && echo "audio levels stored"

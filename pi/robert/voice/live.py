@@ -97,7 +97,7 @@ def session_config(voice: str, silence_ms: int, state: dict | None, wake: str):
             prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice))),
         realtime_input_config=types.RealtimeInputConfig(
             automatic_activity_detection=types.AutomaticActivityDetection(
-                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
                 silence_duration_ms=silence_ms, prefix_padding_ms=100)),
     )
 
