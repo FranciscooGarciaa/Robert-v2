@@ -52,6 +52,10 @@ class VoiceCommand(BaseModel):
     action: str
 
 
+class VisionPeople(BaseModel):
+    people: list[dict]
+
+
 @router.post("/voice/event")
 def voice_event(event: VoiceEvent, request: Request) -> dict:
     _local_only(request)
@@ -71,6 +75,13 @@ async def voice_command(cmd: VoiceCommand, request: Request) -> dict:
     app = request.app.state
     if cmd.action == "stop":
         app.motion.stop("voice_stop")
+    elif cmd.action == "follow_off":
+        app.motion.stop("voice_follow_off")
+    elif cmd.action == "follow":
+        if not app.robot.esp32.connected:
+            return {"ok": False, "reason": "esp32_disconnected"}
+        app.nudger.cancel()
+        app.autonomy.start_follow("voice")
     elif cmd.action in MOVES:
         if not app.robot.esp32.connected:
             return {"ok": False, "reason": "esp32_disconnected"}
@@ -78,4 +89,13 @@ async def voice_command(cmd: VoiceCommand, request: Request) -> dict:
         app.nudger.start(cmd.action)
     else:
         raise HTTPException(status_code=400, detail="unknown action")
+    return {"ok": True}
+
+
+@router.post("/vision/people")
+def vision_people(body: VisionPeople, request: Request) -> dict:
+    _local_only(request)
+    v = request.app.state.robot.vision
+    v.people = body.people
+    v.updated = time.monotonic()
     return {"ok": True}

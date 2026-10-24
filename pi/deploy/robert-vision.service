@@ -1,0 +1,16 @@
+[Unit]
+Description=Robert vision (camera owner + person detection)
+After=network-online.target robert.service sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/robert/pi
+ExecStart=/home/pi/robert/pi/.venv/bin/python -m robert.vision.service
+Restart=always
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

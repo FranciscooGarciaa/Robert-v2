@@ -166,3 +166,23 @@ def test_look_without_camera_says_so():
     session, _, _, _ = converse([[tool("mirar")]])
     assert session.sent_video == []
     assert session.tool_responses[0].response == {"ok": False, "reason": "la cámara no responde"}
+
+
+def test_follow_tool_reports_when_it_found_someone():
+    class FollowBackend(FakeBackend):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def state(self):
+            self.calls += 1
+            st = "following" if self.calls > 1 else "searching"
+            return {"nav": {"follow": {"state": st, "distance_m": 1.8}}}
+
+    session, mic, player = FakeSession([[tool("seguirme")]]), FakeMic(), FakePlayer()
+    backend = FollowBackend()
+    talk = LiveConversation(FakeClient(session), "m", None, mic, player,
+                            NS(is_speech=lambda f: False), backend, 2.0)
+    asyncio.run(asyncio.wait_for(talk.run(), 10))
+    assert backend.commands == ["follow"]
+    assert session.tool_responses[0].response == {"ok": True, "estado": "te sigo; estás a 1.8 m"}

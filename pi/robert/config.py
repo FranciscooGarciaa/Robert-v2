@@ -64,6 +64,12 @@ class Settings:
     auto_spin_speed: int = 90
     auto_arm_timeout_ms: int = 300       # PWA must keep re-arming within this
     auto_stuck_s: float = 8.0
+    # Follow me (you are the dead-man: losing you stops it).
+    follow_distance_m: float = 1.2       # from the robot centre
+    follow_stop_m: float = 1.0           # closer than this: stand still
+    follow_max_m: float = 3.0            # farther than this: stop and give up
+    follow_max_speed: int = 100
+    follow_timeout_s: float = 600.0
     http_host: str = "0.0.0.0"
     http_port: int = 8000
     frontend_dir: Path = ROOT.parent / "frontend"
@@ -109,6 +115,11 @@ class Settings:
             auto_spin_speed=int(e.get("AUTO_SPIN_SPEED", cls.auto_spin_speed)),
             auto_arm_timeout_ms=int(e.get("AUTO_ARM_TIMEOUT_MS", cls.auto_arm_timeout_ms)),
             auto_stuck_s=float(e.get("AUTO_STUCK_S", cls.auto_stuck_s)),
+            follow_distance_m=float(e.get("FOLLOW_DISTANCE_M", cls.follow_distance_m)),
+            follow_stop_m=float(e.get("FOLLOW_STOP_M", cls.follow_stop_m)),
+            follow_max_m=float(e.get("FOLLOW_MAX_M", cls.follow_max_m)),
+            follow_max_speed=int(e.get("FOLLOW_MAX_SPEED", cls.follow_max_speed)),
+            follow_timeout_s=float(e.get("FOLLOW_TIMEOUT_S", cls.follow_timeout_s)),
             http_host=e.get("HTTP_HOST", cls.http_host),
             http_port=int(e.get("HTTP_PORT", cls.http_port)),
             frontend_dir=Path(e.get("FRONTEND_DIR", cls.frontend_dir)),

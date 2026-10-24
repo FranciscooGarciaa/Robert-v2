@@ -69,13 +69,23 @@ ssh_pi 'cd ~/robert/pi && { [ -d .venv ] || python3 -m venv .venv; } \
 ssh_pi 'cd ~/robert-models/piper && for f in es_ES-davefx-medium.onnx es_ES-davefx-medium.onnx.json; do
   [ -s $f ] || curl -sSL -o $f "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/$f"; done'
 
+echo "== vision model (exported on the Mac: yolo export model=yolo11n.pt format=onnx imgsz=320)"
+if [ -f "${YOLO_ONNX:-}" ]; then
+  ssh_pi 'mkdir -p ~/robert-models/vision'
+  scp -q $SSH_OPTS "$YOLO_ONNX" "$PI:robert-models/vision/yolo11n-320.onnx"
+else
+  echo "   (set YOLO_ONNX=/path/yolo11n.onnx to copy it; follow-me needs it)"
+fi
+
 echo "== services"
 ssh_pi "PW='$PW' bash -s" <<'EOF'
 set -e
 S() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
-for svc in robert robert-voice; do S cp ~/robert/pi/deploy/$svc.service /etc/systemd/system/; done
+for svc in robert robert-voice robert-vision; do S cp ~/robert/pi/deploy/$svc.service /etc/systemd/system/; done
 S systemctl daemon-reload
-S systemctl enable robert robert-voice >/dev/null 2>&1
+S systemctl enable robert robert-voice robert-vision >/dev/null 2>&1
+# No desktop: frees ~100-150 MB of the 1 GB for the voice and vision services.
+S raspi-config nonint do_boot_behaviour B1
 echo "services enabled (they start on the next boot)"
 EOF
 echo "Done. Reboot the Pi (sudo reboot), then: pi/scripts/setup_pi.sh audio"

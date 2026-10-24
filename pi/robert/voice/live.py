@@ -20,6 +20,7 @@ from .audio import MIC_RATE
 log = logging.getLogger("robert.voice.live")
 
 UNMUTE_TAIL_S = 0.15
+FOLLOW_WAIT_STEPS, FOLLOW_WAIT_STEP_S = 12, 0.3   # acquisition gives up after 3 s
 WATCH_S = 0.2
 DIRECTIONS = {"adelante": "forward", "atras": "backward", "izquierda": "left", "derecha": "right"}
 
@@ -36,8 +37,11 @@ Herramientas:
   pregunten qué ves, quién está, qué es algo o cómo es lo que tienes delante. Describe
   solo lo que aparece en la foto; si no se ve bien, dilo.
 - estado_robot: distancias del LiDAR alrededor y si te mueves. No inventes distancias.
+- seguirme: empieza a seguir a la persona que tienes delante (a 1,2 m). Úsala cuando te
+  pidan que les sigas o les acompañes. Si responde que no ve a nadie, pide que se ponga
+  delante de ti, a menos de 3 m. Para parar: dejar_de_seguir (o parar).
 - despedirse: cuando la persona se despida o diga que ya está.
-Explorar o seguir a alguien no se activa por voz: di que se hace desde la app.
+Explorar no se activa por voz: di que se hace desde la app.
 Te despiertan diciendo "{wake}"; es la señal de activación, no tu nombre. Si solo oyes
 eso, no saludes ni te presentes: espera a la petición o di como mucho "¿Sí?"."""
 
@@ -79,6 +83,8 @@ def session_config(voice: str, silence_ms: int, state: dict | None, wake: str):
             "properties": {"direccion": {"type": "string", "enum": list(DIRECTIONS)}}}),
         fn("mirar", "Hace una foto con la cámara delantera y la envía para que la veas."),
         fn("estado_robot", "Devuelve lo que el robot sabe ahora: espacio libre alrededor y si se mueve."),
+        fn("seguirme", "Empieza a seguir a la persona que está delante del robot."),
+        fn("dejar_de_seguir", "Deja de seguir a la persona y se para."),
         fn("despedirse", "Termina la conversación cuando la persona se despide."),
     ])]
     return types.LiveConnectConfig(
@@ -209,6 +215,21 @@ class LiveConversation:
         self._last_sound = self._clock()
         self._mic.mute(False)
 
+    async def _start_follow(self) -> dict:
+        """Starts follow-me and waits (briefly) to know whether a person was found."""
+        result = await asyncio.to_thread(self._backend.command, "follow")
+        if not result.get("ok"):
+            return result
+        for _ in range(FOLLOW_WAIT_STEPS):
+            await asyncio.sleep(FOLLOW_WAIT_STEP_S)
+            state = await asyncio.to_thread(self._backend.state) or {}
+            follow = state.get("nav", {}).get("follow", {})
+            if follow.get("state") == "following":
+                return {"ok": True, "estado": f"te sigo; estás a {follow.get('distance_m')} m"}
+            if follow.get("state") in ("stopped", "failed", "idle"):
+                return {"ok": False, "reason": "no veo a nadie delante, a menos de 3 m"}
+        return {"ok": False, "reason": "no veo a nadie delante, a menos de 3 m"}
+
     async def _tools(self, calls) -> None:
         from google.genai import types
 
@@ -234,6 +255,10 @@ class LiveConversation:
             if action is None:
                 return {"ok": False, "reason": "dirección desconocida"}
             return await asyncio.to_thread(self._backend.command, action)
+        if name == "seguirme":
+            return await self._start_follow()
+        if name == "dejar_de_seguir":
+            return await asyncio.to_thread(self._backend.command, "follow_off")
         if name == "mirar":
             jpeg = await asyncio.to_thread(self._camera)
             return jpeg if jpeg is not None else {"ok": False, "reason": "la cámara no responde"}

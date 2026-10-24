@@ -36,8 +36,13 @@
   </section>
 
   <section class="auto">
-    <button id="explore" type="button" class="explore" aria-pressed="false">Explorar</button>
-    <p class="note">Autónomo solo mientras esta pantalla esté abierta. STOP o mover a mano lo desactiva.</p>
+    <div class="auto-buttons">
+      <button id="explore" type="button" class="explore" aria-pressed="false">Explorar</button>
+      <button id="follow" type="button" class="explore" aria-pressed="false">Seguirme</button>
+    </div>
+    <p id="follow-info" class="note"></p>
+    <p class="note">Explorar: solo con esta pantalla abierta. Seguirme: se para si te pierde, si te alejas
+      más de 3 m o con STOP / "para". Mover a mano desactiva ambos.</p>
   </section>
 
   <section class="voice" aria-live="polite">

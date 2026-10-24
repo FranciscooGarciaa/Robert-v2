@@ -54,6 +54,13 @@ class NavState:
     stuck: bool = False
     footprint: list[float] = field(default_factory=list)   # [length, width, margin] m
     blind: list[list[int]] = field(default_factory=list)   # masked [first, last] bins
+    follow: dict = field(default_factory=dict)              # state, distance_m, bearing_deg
+
+
+@dataclass
+class VisionState:
+    people: list[dict] = field(default_factory=list)  # [{bearing_deg, half_width_deg, score}]
+    updated: float | None = None                      # time.monotonic() of the last report
 
 
 @dataclass
@@ -81,6 +88,7 @@ class RobotState:
     lidar: LidarState = field(default_factory=LidarState)
     nav: NavState = field(default_factory=NavState)
     voice: VoiceState = field(default_factory=VoiceState)
+    vision: VisionState = field(default_factory=VisionState)
     started_at: float = field(default_factory=time.monotonic)
 
     def snapshot(self) -> dict:
@@ -93,6 +101,9 @@ class RobotState:
         lidar.pop("bins")
         last = lidar.pop("last_scan")
         lidar["scan_age_ms"] = None if last is None else int((now - last) * 1000)
+        vision = data["vision"]
+        last = vision.pop("updated")
+        vision["age_ms"] = None if last is None else int((now - last) * 1000)
         voice = data["voice"]
         last = voice.pop("updated")
         # The voice service reports at least every few seconds; silence = it is down.

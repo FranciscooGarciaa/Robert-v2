@@ -6,6 +6,8 @@
 import asyncio
 import contextlib
 import logging
+import threading
+import urllib.request
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -28,6 +30,22 @@ from .robot.state import RobotState
 log = logging.getLogger("robert")
 
 
+VISION_URL = "http://127.0.0.1:8002"
+
+
+def vision_detect(on: bool) -> None:
+    """Asks the vision service to run (or stop) person detection; never blocks the loop."""
+    def call() -> None:
+        try:
+            req = urllib.request.Request(f"{VISION_URL}/detect/{'on' if on else 'off'}", data=b"",
+                                         method="POST")
+            urllib.request.urlopen(req, timeout=2).close()
+        except OSError as exc:
+            log.warning("vision service unreachable (%r): follow cannot find people", exc)
+
+    threading.Thread(target=call, daemon=True).start()
+
+
 def create_app(settings: Settings, start_esp32: bool = True,
                start_lidar: bool = True) -> FastAPI:
     robot = RobotState()
@@ -39,7 +57,7 @@ def create_app(settings: Settings, start_esp32: bool = True,
     guard = CollisionGuard(model, scan, robot.nav, settings.guard_slow_extra_m,
                            settings.guard_blind_max_speed, settings.guard_enabled)
     motion = MotionController(robot, settings.max_speed, settings.deadman_ms, guard=guard)
-    autonomy = Autonomy(settings, robot, motion, scan, model)
+    autonomy = Autonomy(settings, robot, motion, scan, model, on_follow=vision_detect)
     nudger = Nudger(motion)
     esp32 = Esp32Client(settings, robot, motion)
     lidar = None

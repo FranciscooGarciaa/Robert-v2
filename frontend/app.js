@@ -99,6 +99,36 @@ for (const btn of dirButtons) {
 }
 
 $("stop").addEventListener("pointerdown", (e) => { e.preventDefault(); stop(); });
+$("follow").addEventListener("click", () => {
+  if (!espConnected) return;
+  const on = $("follow").getAttribute("aria-pressed") !== "true";
+  if (on) setExploring(false);
+  send({ type: "follow", on });
+});
+
+const FOLLOW_LABELS = {
+  searching: "Buscando a quien seguir… ponte delante, a menos de 3 m",
+  following: "Siguiéndote",
+  lost: "Te he perdido de vista, buscándote…",
+};
+const STOP_REASONS = {
+  follow_nobody_in_front: "No vi a nadie delante",
+  follow_lost: "Te perdí y me he parado",
+  follow_too_far: "Te alejaste más de 3 m: parado",
+  follow_timeout: "10 minutos siguiendo: parado",
+};
+
+function renderFollow(nav) {
+  const f = nav.follow ?? {};
+  const active = nav.auto === "follow";
+  const btn = $("follow");
+  btn.setAttribute("aria-pressed", String(active));
+  btn.textContent = active ? "Siguiendo (pulsa para parar)" : "Seguirme";
+  let text = active ? FOLLOW_LABELS[f.state] ?? "" : STOP_REASONS[f.reason] ?? "";
+  if (active && f.distance_m != null) text += ` · ${f.distance_m.toFixed(1)} m, ${f.bearing_deg}°`;
+  $("follow-info").textContent = text;
+}
+
 $("explore").addEventListener("click", () => {
   if (exploring) stop();
   else if (espConnected) setExploring(true);
@@ -142,6 +172,7 @@ function render(state) {
   setPill($("link-esp"), espConnected, espConnected ? "ESP32: conectado" : "ESP32: desconectado");
   dirButtons.forEach((b) => (b.disabled = !espConnected));
   $("explore").disabled = !espConnected;
+  $("follow").disabled = !espConnected;
   if (!espConnected && (activeDir || exploring)) stop();
 
   // Stop re-arming once the Pi has ended autonomy itself (stuck, blind, ...),
@@ -167,6 +198,7 @@ function render(state) {
     : `${m.mode === "auto" ? "auto " : ""}${nav.out_left} / ${nav.out_right}`;
 
   lastNav = nav;
+  renderFollow(nav);
   const gi = $("guard-info");
   gi.textContent = nav.stuck ? "Atascado: autónomo desactivado"
     : nav.limited_by ? `Frenada LiDAR: ${nav.limited_by}` : "";
@@ -299,6 +331,16 @@ function drawNav(nav, c, k, dpr, toX, toY) {
     ctx.lineTo(c - Math.sin(g) * r, c - Math.cos(g) * r);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+  // Followed person: a big dot where the LiDAR has them.
+  const f = nav.follow ?? {};
+  if (nav.auto === "follow" && f.distance_m != null) {
+    const b = (f.bearing_deg * Math.PI) / 180;
+    const px = c - Math.sin(b) * f.distance_m * k, py = c - Math.cos(b) * f.distance_m * k;
+    ctx.fillStyle = css("--warn");
+    ctx.beginPath();
+    ctx.arc(px, py, 7 * dpr, 0, 2 * Math.PI);
+    ctx.fill();
   }
   if (nav.path?.length) {
     const color = { ok: "--path-ok", slow: "--path-slow", blocked: "--path-blocked" }[nav.guard] ?? "--path-ok";

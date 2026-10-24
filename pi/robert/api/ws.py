@@ -2,6 +2,7 @@
 
 Client -> Pi:  {"type":"drive","left":int,"right":int}  (re-send every ~100 ms)
                {"type":"auto","mode":"explore"}       (re-send every ~100 ms to stay armed)
+               {"type":"follow","on":bool}           (once; the followed person is the dead-man)
                {"type":"stop"}
 Pi -> Client:  {"type":"state", ...RobotState.snapshot(), "max_speed": int}
                {"type":"scan","bins":[360 x mm]}  (LiDAR, robot frame,
@@ -77,6 +78,12 @@ async def control_socket(ws: WebSocket) -> None:
                 autonomy.disarm()
                 app.state.nudger.cancel()
                 motion.drive(left, right, client_id)
+            elif kind == "follow":
+                if msg.get("on") is True and app.state.robot.esp32.connected:
+                    app.state.nudger.cancel()
+                    autonomy.start_follow(client_id)
+                elif msg.get("on") is False:
+                    motion.stop(f"{client_id}_follow_off")
             elif kind == "auto":
                 mode = msg.get("mode")
                 if isinstance(mode, str):
