@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 
 CLUSTER_GAP_M = 0.15
-PERSON_WIDTH_M = (0.08, 0.8)     # one leg ... two legs / torso
+PERSON_WIDTH_M = (0.03, 0.8)     # one leg seen from 3 m (2-3 points) ... two legs / torso
 ACQUIRE_RANGE_M = 3.0
 ACQUIRE_BEARING = math.radians(25)
 ACQUIRE_S = 3.0
