@@ -24,7 +24,7 @@ WATCH_S = 0.2
 DIRECTIONS = {"adelante": "forward", "atras": "backward", "izquierda": "left", "derecha": "right"}
 
 SYSTEM_PROMPT = """Eres Robert, un pequeño robot rover de cuatro ruedas hecho en casa por Fran.
-Tienes un LiDAR que ve 360° a tu alrededor, una cámara, micrófonos y altavoces.
+Tienes un LiDAR que ve 360° a tu alrededor, una cámara delante, micrófonos y altavoces.
 Hablas español de España, con gracia y cercanía, como un compañero curioso.
 Contesta breve: una o dos frases, salvo que te pidan más.
 
@@ -32,8 +32,10 @@ Herramientas:
 - parar: en cuanto te pidan parar o quedarte quieto, o ante cualquier duda de seguridad.
 - mover: avanza, retrocede o gira un instante (un segundo como mucho). Si la respuesta
   dice que no se ha podido, explícalo.
-- estado_robot: úsala si te preguntan qué ves, qué tienes cerca o cómo estás. No inventes
-  distancias ni datos que no te dé.
+- mirar: hace una foto con tu cámara delantera y te la envía. Úsala siempre que te
+  pregunten qué ves, quién está, qué es algo o cómo es lo que tienes delante. Describe
+  solo lo que aparece en la foto; si no se ve bien, dilo.
+- estado_robot: distancias del LiDAR alrededor y si te mueves. No inventes distancias.
 - despedirse: cuando la persona se despida o diga que ya está.
 Explorar o seguir a alguien no se activa por voz: di que se hace desde la app.
 Te despiertan diciendo "{wake}"; es la señal de activación, no tu nombre. Si solo oyes
@@ -75,6 +77,7 @@ def session_config(voice: str, silence_ms: int, state: dict | None, wake: str):
         fn("mover", "Mueve el robot un instante (un segundo como máximo).",
            {"type": "object", "required": ["direccion"],
             "properties": {"direccion": {"type": "string", "enum": list(DIRECTIONS)}}}),
+        fn("mirar", "Hace una foto con la cámara delantera y la envía para que la veas."),
         fn("estado_robot", "Devuelve lo que el robot sabe ahora: espacio libre alrededor y si se mueve."),
         fn("despedirse", "Termina la conversación cuando la persona se despide."),
     ])]
@@ -97,6 +100,7 @@ class LiveConversation:
     """One conversation, from just after the wake word until idle or goodbye."""
 
     def __init__(self, client, model: str, config, mic, player, vad, backend, idle_s: float,
+                 camera: Callable[[], bytes | None] = lambda: None,
                  clock: Callable[[], float] = time.monotonic):
         self._client = client
         self._model = model
@@ -106,6 +110,7 @@ class LiveConversation:
         self._vad = vad
         self._backend = backend
         self._idle_s = idle_s
+        self._camera = camera
         self._clock = clock
         self._session = None
         self._last_voice = self._last_sound = clock()
@@ -210,11 +215,18 @@ class LiveConversation:
         responses = []
         for call in calls:
             result = await self._tool(call.name, dict(call.args or {}))
-            log.info("tool %s(%s) -> %s", call.name, dict(call.args or {}), result)
-            responses.append(types.FunctionResponse(id=call.id, name=call.name, response=result))
+            parts = None
+            if isinstance(result, bytes):  # a photo: hand it back with the call it answers
+                parts = [types.FunctionResponsePart(inline_data=types.FunctionResponseBlob(
+                    mime_type="image/jpeg", data=result))]
+                result = {"resultado": "Esta es la foto que acaba de hacer tu cámara delantera."}
+            log.info("tool %s(%s) -> %s%s", call.name, dict(call.args or {}), result,
+                     " + photo" if parts else "")
+            responses.append(types.FunctionResponse(id=call.id, name=call.name, response=result,
+                                                    parts=parts))
         await self._session.send_tool_response(function_responses=responses)
 
-    async def _tool(self, name: str, args: dict) -> dict:
+    async def _tool(self, name: str, args: dict) -> dict | bytes:
         if name == "parar":
             return await asyncio.to_thread(self._backend.command, "stop")
         if name == "mover":
@@ -222,6 +234,9 @@ class LiveConversation:
             if action is None:
                 return {"ok": False, "reason": "dirección desconocida"}
             return await asyncio.to_thread(self._backend.command, action)
+        if name == "mirar":
+            jpeg = await asyncio.to_thread(self._camera)
+            return jpeg if jpeg is not None else {"ok": False, "reason": "la cámara no responde"}
         if name == "estado_robot":
             state = await asyncio.to_thread(self._backend.state)
             return {"estado": describe_state(state)}

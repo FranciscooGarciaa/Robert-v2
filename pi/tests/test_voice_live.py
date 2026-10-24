@@ -12,10 +12,14 @@ class FakeSession:
     def __init__(self, turns):
         self.turns = list(turns)
         self.sent_audio = 0
+        self.sent_video = []
         self.tool_responses = []
 
-    async def send_realtime_input(self, audio):
-        self.sent_audio += 1
+    async def send_realtime_input(self, audio=None, video=None):
+        if audio is not None:
+            self.sent_audio += 1
+        if video is not None:
+            self.sent_video.append(video)
 
     async def send_tool_response(self, function_responses):
         self.tool_responses.extend(function_responses)
@@ -102,10 +106,10 @@ def tool(name, **args):
               tool_call=NS(function_calls=[NS(id="1", name=name, args=args)]))
 
 
-def converse(turns, idle_s=0.4):
+def converse(turns, idle_s=0.4, camera=lambda: None):
     session, mic, player, backend = FakeSession(turns), FakeMic(), FakePlayer(), FakeBackend()
     talk = LiveConversation(FakeClient(session), "m", None, mic, player,
-                            NS(is_speech=lambda f: False), backend, idle_s)
+                            NS(is_speech=lambda f: False), backend, idle_s, camera)
     asyncio.run(asyncio.wait_for(talk.run(), 5))
     return session, mic, player, backend
 
@@ -149,3 +153,16 @@ def test_wake_phrase_and_prompt():
     assert wake_phrase("hey_jarvis") == "Hey Jarvis"
     assert wake_phrase("/home/x/robert-models/robert.onnx") == "Robert"
     assert '"Robert"' in SYSTEM_PROMPT.format(wake="Robert")
+
+
+def test_look_answers_with_the_photo_attached():
+    session, _, _, _ = converse([[tool("mirar")]], camera=lambda: b"\xff\xd8jpeg")
+    reply = session.tool_responses[0]
+    assert reply.parts[0].inline_data.mime_type == "image/jpeg"
+    assert reply.parts[0].inline_data.data == b"\xff\xd8jpeg"
+
+
+def test_look_without_camera_says_so():
+    session, _, _, _ = converse([[tool("mirar")]])
+    assert session.sent_video == []
+    assert session.tool_responses[0].response == {"ok": False, "reason": "la cámara no responde"}

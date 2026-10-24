@@ -11,7 +11,7 @@ import asyncio
 import logging
 import threading
 
-from . import assets
+from . import assets, camera
 from .audio import Mic, StreamPlayer
 from .backend import Backend
 from .config import VoiceSettings
@@ -41,7 +41,8 @@ class VoiceService:
         asyncio.get_running_loop().call_later(self.player.remaining_s(), self.mic.mute, False)
         state = await asyncio.to_thread(self.backend.state)
         talk = LiveConversation(self.client, s.live_model, session_config(s.voice, s.silence_ms, state, wake_phrase(s.wake_model)),
-                                self.mic, self.player, self.vad, self.backend, s.idle_s)
+                                self.mic, self.player, self.vad, self.backend, s.idle_s,
+                                camera.capture_jpeg)
         try:
             await talk.run()
         except Exception as exc:  # noqa: BLE001 - network/API: say so, back to the wake word
