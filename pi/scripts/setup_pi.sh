@@ -27,6 +27,11 @@ fi
 if [ "$STEP" = audio ]; then
   # Levels validated 2026-10-23/24: mic +27 dB with HPF (talking from 2-3 m), output 0 dB (PAM on the LiPo).
   ssh_pi "PW='$PW' bash -s" <<'EOF'
+    # PipeWire is not used (the services talk to ALSA directly) and WirePlumber reset
+    # the PCM volume to 40 % on every boot: mask it so the stored levels stick.
+    export XDG_RUNTIME_DIR=/run/user/$(id -u)
+    systemctl --user mask --now pipewire.socket pipewire.service pipewire-pulse.socket \
+      pipewire-pulse.service wireplumber.service >/dev/null 2>&1
     C=seeed2micvoicec
     amixer -q -c $C sset "Left PGA Mixer Line1L" on; amixer -q -c $C sset "Right PGA Mixer Line1R" on
     amixer -q -c $C sset PGA 54; amixer -q -c $C sset "ADC HPF Cut-off" "0.0045xFs","0.0045xFs"
