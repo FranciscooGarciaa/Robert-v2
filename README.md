@@ -138,4 +138,5 @@ Detalles en `firmware/robert_motor/protocol.h`.
 
 - HC‑SR04 sin eco se trata como "despejado" (también si el sensor se desconecta); `us_timeouts` en telemetría lo hace visible.
 - PWA por HTTP en LAN: no instalable como app (requiere HTTPS); funciona como página.
+- Reinstalar una Pi recién grabada: `pi/scripts/setup_pi.sh` (y tras reiniciar, `setup_pi.sh audio`).
 - Pendiente: calibración en el suelo, red propia (hotspot), HC‑SR04 inclinado para bordillos, Seguirme (cámara + LiDAR; la cámara aún no se detecta), GPS, voz.
