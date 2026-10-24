@@ -17,6 +17,7 @@ from .config import Settings
 from .robot.esp32_client import Esp32Client
 from .robot.lidar import LidarReader, ScanAssembler
 from .nav.autonomy import TICK_S, Autonomy
+from .nav.calib import load_mask, sectors
 from .nav.guard import CollisionGuard
 from .nav.model import RobotModel
 from .nav.scan import ScanView
@@ -32,7 +33,9 @@ def create_app(settings: Settings, start_esp32: bool = True,
     robot = RobotState()
     model = RobotModel.from_settings(settings)
     robot.nav.footprint = [model.length_m, model.width_m, model.margin_m]
-    scan = ScanView(robot.lidar, model, settings.guard_stale_s)
+    mask = load_mask(settings.lidar_mask_path, settings.lidar_offset_deg, settings.lidar_clockwise)
+    robot.nav.blind = [list(s) for s in sectors(mask)]
+    scan = ScanView(robot.lidar, model, settings.guard_stale_s, mask=mask)
     guard = CollisionGuard(model, scan, robot.nav, settings.guard_slow_extra_m,
                            settings.guard_blind_max_speed, settings.guard_enabled)
     motion = MotionController(robot, settings.max_speed, settings.deadman_ms, guard=guard)

@@ -53,6 +53,7 @@ class NavState:
     goal_deg: float | None = None      # explore target bearing, + = left
     stuck: bool = False
     footprint: list[float] = field(default_factory=list)   # [length, width, margin] m
+    blind: list[list[int]] = field(default_factory=list)   # masked [first, last] bins
 
 
 @dataclass

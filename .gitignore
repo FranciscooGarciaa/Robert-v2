@@ -8,3 +8,4 @@ __pycache__/
 .pytest_cache/
 build/
 .DS_Store
+pi/.lidar_mask_captures.json

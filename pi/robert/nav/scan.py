@@ -14,14 +14,24 @@ _COS, _SIN = np.cos(_ANGLES), np.sin(_ANGLES)
 
 
 class ScanView:
+    """`mask` marks bins the LiDAR cannot see through (the robot's own parts,
+    from tools/calibrate_lidar.py). Their returns are dropped, and callers
+    can ask how blind a direction is before moving that way."""
+
     def __init__(self, lidar: LidarState, model: RobotModel, stale_s: float,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, mask: np.ndarray | None = None):
         self._lidar = lidar
+        self.mask = np.zeros(360, dtype=bool) if mask is None else mask
         self._model = model
         self._stale_s = stale_s
         self._clock = clock
         self._bins = None
         self._points = np.empty((2, 0))
+
+    def blind_deg(self, center_deg: float, half_width_deg: float = 60) -> int:
+        """Masked degrees within +-half_width of a direction (clockwise from the front)."""
+        offsets = (np.arange(360) - center_deg + 180) % 360 - 180
+        return int((self.mask & (np.abs(offsets) <= half_width_deg)).sum())
 
     def age_s(self) -> float | None:
         last = self._lidar.last_scan
@@ -40,7 +50,7 @@ class ScanView:
 
     def _convert(self, mm: np.ndarray) -> np.ndarray:
         m = self._model
-        valid = mm > 0
+        valid = (mm > 0) & ~self.mask
         r = mm[valid] / 1000
         x = r * _COS[valid] + m.lidar_x_m
         y = r * _SIN[valid] + m.lidar_y_m

@@ -16,6 +16,7 @@ from ..config import Settings
 from ..robot.motion import MotionController
 from ..robot.state import RobotState
 from .explore import Explorer
+from .guard import BLIND_LIMIT_DEG
 from .model import RobotModel
 from .planner import ArcPlanner
 from .scan import ScanView
@@ -92,10 +93,11 @@ class Autonomy:
         turned = self._last_w * (now - self._last_tick)
         self._last_tick = now
         goal = self.explorer.update(points, turned)
-        plan = self.planner.choose(points, goal, self._v_max, self._w_spin)
+        reverse_ok = self._scan.blind_deg(180) < BLIND_LIMIT_DEG
+        plan = self.planner.choose(points, goal, self._v_max, self._w_spin, reverse_ok)
         self._nav.goal_deg = round(math.degrees(goal))
 
-        if plan.v >= PROGRESS_FRACTION * self._v_max:
+        if abs(plan.v) >= PROGRESS_FRACTION * self._v_max:  # backing out of a corner counts too
             self._progress_at = now
         elif now - self._progress_at > self._stuck_s:
             self._nav.stuck = True

@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 
-from navsim import MODEL, FakeClock, scan_view, wall
+from navsim import MODEL, FakeClock, bins_for, scan_view, wall
 from robert.config import Settings
 from robert.nav import geometry
 from robert.nav.autonomy import Autonomy
@@ -248,3 +248,82 @@ def test_guard_observe_reports_clearance_without_driving():
     clock.t += 1.0  # stale scan
     g.observe()
     assert nav.clearance == {}
+
+
+# --- calibration, blind sectors, reversing ------------------------------------
+
+def test_calib_offset_and_direction():
+    from robert.nav.calib import direction_fix, nearest_bin, offset_fix
+
+    bins = bins_for([(0.30, 0.40, -0.05, 0.05)])           # box straight ahead...
+    rotated = bins[-20:] + bins[:-20]                        # ...seen 20 deg off by the sensor
+    assert nearest_bin(rotated) in (19, 20, 21)
+    off = offset_fix(nearest_bin(rotated), 0.0)
+    assert abs(((off + 180) % 360) - 180 + 20) <= 1          # -20 deg
+    left_ok = nearest_bin(bins_for([(-0.05, 0.05, 0.30, 0.40)]))  # box on the left
+    assert direction_fix(left_ok, off, True) == (off % 360, True)
+    mirrored = (360 - left_ok) % 360                          # a mirrored sensor shows it on the right
+    assert direction_fix(mirrored, off, True) == ((-off) % 360, False)
+
+
+def test_self_mask_keeps_only_what_moves_with_the_robot():
+    from robert.nav.calib import sectors, self_mask
+
+    shell = (-0.30, -0.18, -0.12, 0.12)                       # a hood behind the LiDAR
+    rooms = [[wall(0.9), shell], [(-3, 3, 0.7, 0.8), shell], [(0.4, 3, -3, -0.6), shell]]
+    mask = self_mask([bins_for(r) for r in rooms])
+    runs = sectors(mask)
+    assert len(runs) == 1 and 140 <= runs[0][0] <= 155 and 205 <= runs[0][1] <= 220
+
+
+def test_mask_drops_self_returns_and_guard_refuses_blind_reverse():
+    from robert.nav.calib import self_mask
+
+    shell = (-0.30, -0.18, -0.12, 0.12)
+    mask = self_mask([bins_for([shell, wall(1.5)])] * 3)
+    view, lidar, clock = scan_view([shell, wall(1.5)])
+    view.mask = mask
+    view._bins = None
+    assert clearances(view.points(), MODEL)["back"] is None   # the hood is gone
+    nav = NavState()
+    g = CollisionGuard(MODEL, view, nav, 0.4, 80)
+    assert g.limit(-100, -100, autonomous=True) == (0, 0) and "sin visión" in nav.limited_by
+    assert g.limit(-150, -150, autonomous=False) == (-80, -80)  # a person may, slowly
+    assert g.limit(100, 100, autonomous=True) == (100, 100)    # forward is seen
+
+
+def test_planner_backs_out_of_a_dead_end():
+    # Boxed in front and on both sides, open behind: nothing forward fits, turning is blocked.
+    # (test footprint incl. margin: +-0.275 x +-0.25 m)
+    tight = [wall(0.30), (-0.1, 0.35, 0.26, 0.3), (-0.1, 0.35, -0.3, -0.26)]
+    view, _, _ = scan_view(tight)
+    p = ArcPlanner(MODEL)
+    plan = p.choose(view.points(), 0.0, V_MAX, W_SPIN)
+    assert plan.v < 0
+    # It commits for a while even if forward would now be possible...
+    view2, _, _ = scan_view([])
+    assert p.choose(view2.points(), 0.0, V_MAX, W_SPIN).v < 0
+    # ...but never backs up blind.
+    p2 = ArcPlanner(MODEL)
+    assert p2.choose(view.points(), 0.0, V_MAX, W_SPIN, reverse_ok=False).v == 0
+
+
+def test_planner_does_not_reverse_when_forward_is_free():
+    view, _, _ = scan_view([wall(-0.5)])
+    assert ArcPlanner(MODEL).choose(view.points(), 0.0, V_MAX, W_SPIN).v > 0
+
+
+def test_mask_file_follows_a_later_frame_change(tmp_path):
+    import numpy as np
+
+    from robert.nav.calib import load_mask, save_mask
+
+    mask = np.zeros(360, dtype=bool)
+    mask[150:211] = True                       # behind, recorded with offset 0, clockwise
+    path = tmp_path / "mask.json"
+    save_mask(mask, path, 0.0, True)
+    assert (load_mask(path, 0.0, True) == mask).all()
+    shifted = load_mask(path, 20.0, True)      # front recalibrated by +20 deg
+    assert shifted[170] and shifted[230] and not shifted[150]
+    mirrored = load_mask(path, 0.0, False)     # sensor turned out mirrored
+    assert mirrored[150] and mirrored[210]     # symmetric about 180: same bins

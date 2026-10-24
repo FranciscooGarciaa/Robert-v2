@@ -41,6 +41,7 @@ class Settings:
     lidar_offset_deg: float = 0.0        # added after mapping to the robot frame
     lidar_clockwise: bool = True         # sensor angles grow clockwise from above
     lidar_push_hz: float = 5.0           # scan broadcast rate to PWA clients
+    lidar_mask_path: Path = ROOT / "lidar_mask.json"  # bins the robot hides (calibrate_lidar.py)
     # Robot geometry and motion model (measure; see tools/calibrate_motion.py).
     # Until calibrated, MPS_PER_PWM over-estimates speed so braking starts early.
     robot_length_m: float = 0.325        # measured 2026-10-22
@@ -59,7 +60,7 @@ class Settings:
     guard_stale_s: float = 0.35          # older scans count as "blind"
     guard_blind_max_speed: int = 80      # manual cap while blind (ESP32 HC-SR04 still vetoes)
     # Autonomy.
-    auto_max_speed: int = 100
+    auto_max_speed: int = 80             # until MPS_PER_PWM/TRACK_EFF_M are calibrated
     auto_spin_speed: int = 90
     auto_arm_timeout_ms: int = 300       # PWA must keep re-arming within this
     auto_stuck_s: float = 8.0
@@ -89,6 +90,7 @@ class Settings:
             lidar_offset_deg=float(e.get("LIDAR_OFFSET_DEG", cls.lidar_offset_deg)),
             lidar_clockwise=_bool(e.get("LIDAR_CLOCKWISE"), cls.lidar_clockwise),
             lidar_push_hz=float(e.get("LIDAR_PUSH_HZ", cls.lidar_push_hz)),
+            lidar_mask_path=Path(e.get("LIDAR_MASK_PATH", cls.lidar_mask_path)),
             robot_length_m=float(e.get("ROBOT_LENGTH_M", cls.robot_length_m)),
             robot_width_m=float(e.get("ROBOT_WIDTH_M", cls.robot_width_m)),
             robot_margin_m=float(e.get("ROBOT_MARGIN_M", cls.robot_margin_m)),

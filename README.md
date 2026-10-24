@@ -75,8 +75,8 @@ al recibir corriente. El backend lo lee en un hilo (`pi/robert/robot/lidar.py`, 
 ahí), agrupa cada vuelta en 360 sectores de 1° en el marco del robot (0° = frente, sentido horario) y la PWA
 la dibuja como radar. `GET /api/lidar/scan` devuelve la última vuelta. ROS 2 y cómo trabajar con el sensor: `docs/lidar-y-ros.md`.
 
-Calibración: objeto justo delante → `nearest_deg` en `/api/state` debería ser ~0. Si no, ajustar
-`LIDAR_OFFSET_DEG` en `pi/.env` (y `LIDAR_CLOCKWISE=false` si al girar el objeto se mueve al revés).
+Calibración guiada (máscara de la carcasa, frente y sentido): `tools/calibrate_lidar.py` (ver su ayuda).
+La máscara se guarda en `pi/lidar_mask.json`; Explorar nunca conduce hacia un sector que el LiDAR no ve.
 Solo un proceso puede abrir el puerto: para usarlo desde ROS, `LIDAR_ENABLED=false` y reiniciar el servicio.
 
 ## Navegación: frenada asistida y modo Explorar (`pi/robert/nav/`)

@@ -276,6 +276,18 @@ function drawRobot(c, k, dpr) {
 }
 
 function drawNav(nav, c, k, dpr, toX, toY) {
+  // Sectors the robot hides from its own LiDAR (calibrated mask): it cannot see there.
+  ctx.fillStyle = css("--grid");
+  for (const [a, b] of nav.blind ?? []) {
+    const end = b >= a ? b + 1 : b + 361;
+    ctx.beginPath();
+    ctx.moveTo(c, c);
+    // Bins are clockwise from the front (up); canvas angles are clockwise from the right.
+    ctx.arc(c, c, c * 0.95, ((a - 90) * Math.PI) / 180, ((end - 90) * Math.PI) / 180);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   if (nav.goal_deg != null) {
     const g = (nav.goal_deg * Math.PI) / 180;
     const r = c * 0.9;

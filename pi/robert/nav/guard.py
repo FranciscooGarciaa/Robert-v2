@@ -18,6 +18,7 @@ from . import geometry
 from .model import RobotModel
 from .scan import ScanView, clearances
 
+BLIND_LIMIT_DEG = 10      # this much masked view in the direction of travel = "can't see there"
 SPIN_RADIUS_M = 0.10       # tighter turns than this are treated as turning in place
 SPIN_MARGIN_RAD = math.radians(15)
 SPIN_SLOW_RAD = math.radians(30)
@@ -69,6 +70,16 @@ class CollisionGuard:
             factor, label = self._spin(points, w)
         else:
             factor, label = self._arc(points, v, w)
+            # Driving into a sector the LiDAR cannot see (e.g. its back is covered):
+            # autonomy never does it; a person driving may, slowly.
+            if self.scan.blind_deg(0 if v > 0 else 180) >= BLIND_LIMIT_DEG and factor > 0:
+                side = "delante" if v > 0 else "detrás"
+                if autonomous:
+                    factor, label = 0.0, f"{side} sin visión"
+                else:
+                    cap = self.blind_max_speed / max(abs(left), abs(right), 1)
+                    if cap < factor:
+                        factor, label = cap, f"{side} sin visión: despacio"
 
         if factor <= 0:
             nav.guard, nav.limited_by = "blocked", label
