@@ -53,10 +53,10 @@ class Vision:
         w = rgb.shape[1]
         out = []
         for x1, _, x2, _, score in self.detector.people(rgb):
-            cx = (x1 + x2) / 2
+            cx = float(x1 + x2) / 2  # plain floats: numpy scalars are not JSON
             out.append({"bearing_deg": round(-(cx / w - 0.5) * self.hfov, 1),
-                        "half_width_deg": round((x2 - x1) / w * self.hfov / 2, 1),
-                        "score": round(score, 2)})
+                        "half_width_deg": round(float(x2 - x1) / w * self.hfov / 2, 1),
+                        "score": round(float(score), 2)})
         return out
 
     def detect_loop(self) -> None:
@@ -68,8 +68,11 @@ class Vision:
                 time.sleep(0.02)
                 continue
             last = t
-            people = self.people(frame)
-            post(f"{BACKEND}/api/vision/people", {"people": people})
+            try:
+                post(f"{BACKEND}/api/vision/people", {"people": self.people(frame)})
+            except Exception:  # noqa: BLE001 - one bad frame must not end detection
+                log.exception("detection failed on a frame")
+                time.sleep(0.5)
 
 
 def post(url: str, body: dict) -> None:

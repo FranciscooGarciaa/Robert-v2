@@ -52,8 +52,8 @@ def decode(output: np.ndarray, scale: float, top: int, left: int) -> list[tuple[
     out = []
     for i in nms(boxes, s):
         x1, y1, x2, y2 = boxes[i]
-        out.append(((x1 - left) / scale, (y1 - top) / scale, (x2 - left) / scale,
-                    (y2 - top) / scale, float(s[i])))
+        out.append((float(x1 - left) / scale, float(y1 - top) / scale, float(x2 - left) / scale,
+                    float(y2 - top) / scale, float(s[i])))
     return out
 
 

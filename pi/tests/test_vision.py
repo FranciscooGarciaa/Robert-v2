@@ -33,3 +33,21 @@ def test_decode_keeps_confident_people_and_merges_duplicates():
 def test_nms_separates_far_boxes():
     boxes = np.array([[0, 0, 10, 10], [50, 50, 60, 60]], np.float32)
     assert sorted(nms(boxes, np.array([0.9, 0.8]))) == [0, 1]
+
+
+def test_service_people_are_json_ready(monkeypatch):
+    import json
+
+    from robert.vision import service
+
+    class FakeDetector:
+        def people(self, rgb):
+            return [(np.float32(100), np.float32(10), np.float32(160), np.float32(200), np.float32(0.9))]
+
+    v = service.Vision.__new__(service.Vision)
+    v.detector, v.hfov = FakeDetector(), 54.0
+    w, h = 640, 480
+    frame = bytes([120] * (w * h)) + bytes([128] * (w * h // 2))
+    people = v.people(frame)
+    json.dumps(people)
+    assert people[0]["bearing_deg"] > 0   # left half of the image = left of the robot
