@@ -4,6 +4,7 @@
 #   PI=pi@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/setup_pi.sh
 # Asks for the Pi's sudo password once. Then reboot the Pi and run
 #   pi/scripts/setup_pi.sh audio      (needs the ReSpeaker driver loaded)
+#   pi/scripts/setup_pi.sh protect    (read-only SD; reboot. Use "unprotect" before deploys)
 set -euo pipefail
 PI="${PI:-pi@robert.local}"
 SSH_OPTS="${SSH_OPTS:-}"
@@ -12,6 +13,16 @@ STEP="${1:-system}"
 ssh_pi() { ssh $SSH_OPTS "$PI" "$@"; }
 
 if [ -z "${PW:-}" ]; then read -rsp "sudo password on the Pi: " PW; echo; fi
+
+if [ "$STEP" = protect ] || [ "$STEP" = unprotect ]; then
+  # Read-only root (overlay in RAM): a power cut can no longer corrupt the SD.
+  # Changes (deploys, .env, calibration) need "unprotect", reboot, change, "protect", reboot.
+  ssh_pi "PW='$PW' bash -s" <<EOF
+printf '%s\n' "\$PW" | sudo -S -p '' raspi-config nonint $([ "$STEP" = protect ] && echo enable_overlayfs || echo disable_overlayfs)
+echo "overlay ${STEP}ed: reboot the Pi to apply"
+EOF
+  exit 0
+fi
 
 if [ "$STEP" = audio ]; then
   # Levels validated 2026-10-23/24: mic +27 dB with HPF (talking from 2-3 m), output -12 dB.
