@@ -60,7 +60,7 @@ class Settings:
     guard_stale_s: float = 0.35          # older scans count as "blind"
     guard_blind_max_speed: int = 80      # manual cap while blind (ESP32 HC-SR04 still vetoes)
     # Autonomy.
-    auto_max_speed: int = 80             # until MPS_PER_PWM/TRACK_EFF_M are calibrated
+    auto_max_speed: int = 100            # PWM; ~0.48 m/s (calibrated 2026-10-24)
     auto_spin_speed: int = 90
     auto_arm_timeout_ms: int = 300       # PWA must keep re-arming within this
     auto_stuck_s: float = 8.0
