@@ -111,7 +111,7 @@ Medidas (2026‑10‑22): 325 × 160 mm, LiDAR en el centro (valores por defecto
 - Red: zona Wi‑Fi del iPhone ("My phone hotspot", **Maximizar compatibilidad** = 2,4 GHz). `pi/scripts/street_ready.sh`
   flashea el ESP32 por OTA, despliega, añade la red a la Pi y deja la SD protegida. En casa, zona Wi‑Fi apagada
   (si no, la Pi y el ESP32 podrían elegir redes distintas).
-- Seguirme: hasta PWM 200 (~0,95 m/s) y 4,5 m. Sin detector de bordillos: solo aceras llanas.
+- Seguirme: a ~0,8 m (para a 0,6 m), hasta PWM 200 (~0,95 m/s) y 4,5 m. Sin detector de bordillos: solo aceras llanas.
 - Diversión (voz o PWA): `bailar` (baile / vuelta / celebracion, ≤ 6 s, con guard), `hacer_foto` (selfie 5 MP
   con cuenta atrás, en la sección Fotos de la PWA; vive en RAM: descargar antes de apagar), modo social
   (saluda a quien se para delante 2 s, una vez por minuto, nunca en movimiento).

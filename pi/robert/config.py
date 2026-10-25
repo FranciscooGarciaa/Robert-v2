@@ -65,8 +65,8 @@ class Settings:
     auto_arm_timeout_ms: int = 300       # PWA must keep re-arming within this
     auto_stuck_s: float = 8.0
     # Follow me (you are the dead-man: losing you stops it).
-    follow_distance_m: float = 1.2       # from the robot centre
-    follow_stop_m: float = 1.0           # closer than this: stand still
+    follow_distance_m: float = 0.8       # from the robot centre (~65 cm from its nose)
+    follow_stop_m: float = 0.6           # closer than this: stand still
     follow_max_m: float = 4.5            # farther than this: stop and give up
     follow_max_speed: int = 200          # ~0.95 m/s: brisk walk / gentle jog
     follow_timeout_s: float = 600.0

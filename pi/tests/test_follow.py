@@ -117,10 +117,10 @@ def test_follow_drives_towards_a_far_person_and_stops_near():
     left, right = rig.see([person_at(2.2, 0.0)])
     assert left > 0 and right > 0                      # 2 m away: come closer
     x = 2.2
-    while x > 1.05:                                    # they walk up to the robot
+    while x > 0.65:                                    # they walk up to the robot
         x -= 0.1
         left, right = rig.see([person_at(x, 0.0)])
-    assert (left, right) == (0, 0)                     # within 1 m: stand
+    assert (left, right) == (0, 0)                     # within FOLLOW_STOP_M: stand
     assert rig.state.nav.follow["state"] == "following"
 
 
