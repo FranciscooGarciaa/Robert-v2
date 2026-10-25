@@ -101,6 +101,8 @@ void begin(TextHandler onText, LostHandler onLost, OtaStartHandler onOtaStart) {
   ws.enableHeartbeat(1000, 1000, 2);
 }
 
+uint32_t failedAttempts = 0;
+
 void update(uint32_t nowMs) {
   const bool connected = WiFi.status() == WL_CONNECTED;
   if (connected && !wasConnected) onWifiUp();
@@ -111,7 +113,16 @@ void update(uint32_t nowMs) {
     // Blocking scan/connect; motors are already stopped when we get here.
     if (nowMs - lastWifiAttemptMs >= cfg::WIFI_RETRY_MS) {
       lastWifiAttemptMs = nowMs;
-      wifiMulti.run(3000);
+      if (wifiMulti.run(3000) != WL_CONNECTED && ++failedAttempts % 5 == 1) {
+        // Say what is out there, so a missing or 5 GHz-only network is obvious.
+        const int n = WiFi.scanNetworks();
+        Serial.printf("[WIFI] not connected; %d networks visible:", n);
+        for (int i = 0; i < n && i < 12; i++) {
+          Serial.printf(" '%s'(%d)", WiFi.SSID(i).c_str(), WiFi.RSSI(i));
+        }
+        Serial.println();
+        WiFi.scanDelete();
+      }
     }
     return;
   }
