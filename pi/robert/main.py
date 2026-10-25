@@ -5,8 +5,10 @@
 
 import asyncio
 import contextlib
+import json
 import logging
 import threading
+import time
 import urllib.request
 from contextlib import asynccontextmanager
 
@@ -24,6 +26,8 @@ from .nav.guard import CollisionGuard
 from .nav.model import RobotModel
 from .nav.scan import ScanView
 from .robot.motion import MotionController
+from .nav.social import SocialGreeter
+from .robot.dance import Dancer
 from .robot.nudge import Nudger
 from .robot.state import RobotState
 
@@ -31,6 +35,25 @@ log = logging.getLogger("robert")
 
 
 VISION_URL = "http://127.0.0.1:8002"
+VOICE_URL = "http://127.0.0.1:8001"
+VOICE_BUSY = ("listening", "thinking", "speaking")
+
+
+def greet_if_person() -> None:
+    """Social mode: one camera check, then ask the voice to say hello (never blocks the loop)."""
+    def call() -> None:
+        try:
+            with urllib.request.urlopen(f"{VISION_URL}/people_now", timeout=3) as r:
+                people = json.load(r).get("people", [])
+            if not people:
+                return
+            req = urllib.request.Request(f"{VOICE_URL}/greet", data=b"", method="POST")
+            urllib.request.urlopen(req, timeout=2).close()
+            log.info("social: greeting someone in front")
+        except OSError as exc:
+            log.warning("social greeting failed: %r", exc)
+
+    threading.Thread(target=call, daemon=True).start()
 
 
 def vision_detect(on: bool) -> None:
@@ -59,6 +82,8 @@ def create_app(settings: Settings, start_esp32: bool = True,
     motion = MotionController(robot, settings.max_speed, settings.deadman_ms, guard=guard)
     autonomy = Autonomy(settings, robot, motion, scan, model, on_follow=vision_detect)
     nudger = Nudger(motion)
+    dancer = Dancer(motion)
+    social = SocialGreeter()
     esp32 = Esp32Client(settings, robot, motion)
     lidar = None
     if settings.lidar_enabled and start_lidar:
@@ -73,6 +98,11 @@ def create_app(settings: Settings, start_esp32: bool = True,
         while True:
             guard.observe()
             autonomy.tick()
+            busy = (robot.motion.mode != "idle" or autonomy.active or dancer.active
+                    or robot.voice.state in VOICE_BUSY)
+            robot.nav.dancing = dancer.active
+            if social.update(scan.points(), busy, time.monotonic()):
+                greet_if_person()
             await asyncio.sleep(TICK_S)
 
     @asynccontextmanager
@@ -102,6 +132,8 @@ def create_app(settings: Settings, start_esp32: bool = True,
     app.state.motion = motion
     app.state.autonomy = autonomy
     app.state.nudger = nudger
+    app.state.dancer = dancer
+    app.state.social = social
     app.include_router(http.router)
     app.include_router(ws.router)
     if settings.frontend_dir.is_dir():

@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import os
+import subprocess
 import threading
 import time
 import urllib.request
@@ -25,6 +26,8 @@ from .detector import Detector
 log = logging.getLogger("robert.vision")
 
 PORT = 8002
+PHOTOS = Path.home() / "robert-photos"
+FULL_W, FULL_H = 2592, 1944
 BACKEND = "http://127.0.0.1:8000"
 MODEL = Path.home() / "robert-models/vision/yolo11n-320.onnx"
 HFOV_DEG = 54.0   # OV5647 standard lens; check against the LiDAR (see README)
@@ -46,6 +49,33 @@ class Vision:
         buf = io.BytesIO()
         Image.fromarray(yuv420_to_rgb(frame, W, H)).save(buf, "JPEG", quality=80)
         return buf.getvalue()
+
+    def people_now(self) -> list[dict]:
+        """One detection on the newest frame (social mode asks this, not a stream)."""
+        frame, t = self.camera.latest()
+        if frame is None or time.monotonic() - t > 2:
+            return []
+        return self.people(frame)
+
+    def full_photo(self) -> str | None:
+        """Full-resolution still: pauses the stream ~1.5 s, saves robert-<time>.jpg."""
+        PHOTOS.mkdir(parents=True, exist_ok=True)
+        name = time.strftime("robert-%Y%m%d-%H%M%S.jpg")
+        self.camera.pause()
+        try:
+            r = subprocess.run(["rpicam-still", "-n", "--immediate", "-t", "800", "--width", str(FULL_W),
+                                "--height", str(FULL_H), "-q", "90", "-o", str(PHOTOS / name)],
+                               capture_output=True, timeout=15, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            log.warning("full photo failed: %r", exc)
+            return None
+        finally:
+            self.camera.resume()
+        if r.returncode != 0 or not (PHOTOS / name).is_file():
+            log.warning("full photo failed (rc=%s)", r.returncode)
+            return None
+        log.info("photo %s", name)
+        return name
 
     def people(self, frame: bytes) -> list[dict]:
         """Directions of detected people; + = left, like the rest of the robot frame."""
@@ -86,7 +116,17 @@ def post(url: str, body: dict) -> None:
 
 def serve(vision: Vision) -> None:
     class Handler(BaseHTTPRequestHandler):
+        def _json(self, body: dict) -> None:
+            data = json.dumps(body).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self):
+            if self.path == "/people_now":
+                return self._json({"people": vision.people_now()})
             if self.path != "/photo.jpg":
                 return self.send_error(404)
             jpeg = vision.photo_jpeg()
@@ -99,6 +139,9 @@ def serve(vision: Vision) -> None:
             self.wfile.write(jpeg)
 
         def do_POST(self):
+            if self.path == "/photo/full":
+                name = vision.full_photo()
+                return self._json({"ok": bool(name), "file": name})
             if self.path == "/detect/on":
                 vision.detecting.set()
             elif self.path == "/detect/off":

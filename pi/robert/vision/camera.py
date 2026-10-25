@@ -33,17 +33,36 @@ class Camera:
         self._frame: bytes | None = None
         self._t = 0.0
         self._lock = threading.Lock()
+        self._running = threading.Event()
+        self._running.set()
+        self._proc: subprocess.Popen | None = None
         threading.Thread(target=self._run, name="camera", daemon=True).start()
+
+    def pause(self) -> None:
+        """Frees the camera (e.g. for a full-resolution still)."""
+        self._running.clear()
+        if self._proc and self._proc.poll() is None:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+
+    def resume(self) -> None:
+        self._running.set()
 
     def _run(self) -> None:
         while True:
-            proc = subprocess.Popen(
+            self._running.wait()
+            proc = self._proc = subprocess.Popen(
                 ["rpicam-vid", "-n", "-t", "0", "--codec", "yuv420", "--width", str(W),
                  "--height", str(H), "--framerate", str(FPS), "-o", "-"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             while (buf := proc.stdout.read(FRAME_BYTES)) and len(buf) == FRAME_BYTES:
                 with self._lock:
                     self._frame, self._t = buf, time.monotonic()
+            if not self._running.is_set():
+                continue  # paused on purpose
             log.warning("rpicam-vid stopped (rc=%s); restarting", proc.poll())
             proc.kill()
             time.sleep(2)

@@ -6,6 +6,7 @@ VAD here just timestamps speech for latency logs and the idle timeout.
 """
 
 import logging
+import threading
 
 import numpy as np
 import webrtcvad
@@ -38,12 +39,16 @@ class WakeWord:
         self._threshold = threshold
         self._oww = Model(wakeword_models=[model], inference_framework="onnx")
 
-    def wait(self) -> float:
-        """Blocks until the wake word is heard; returns its score."""
+    def wait(self, interrupt: threading.Event | None = None) -> float | None:
+        """Blocks until the wake word is heard (returns its score), or until
+        `interrupt` is set (returns None: someone else wants to talk, e.g. social mode)."""
         self._oww.reset()
         self._mic.flush()
         while True:
-            frame = self._mic.read(timeout=1.0)
+            if interrupt is not None and interrupt.is_set():
+                interrupt.clear()
+                return None
+            frame = self._mic.read(timeout=0.2)
             if frame is None:
                 continue
             best = max(self._oww.predict(frame).values())

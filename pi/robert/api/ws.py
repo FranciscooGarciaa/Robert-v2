@@ -77,7 +77,11 @@ async def control_socket(ws: WebSocket) -> None:
                     continue
                 autonomy.disarm()
                 app.state.nudger.cancel()
+                app.state.dancer.cancel()
                 motion.drive(left, right, client_id)
+            elif kind == "social":
+                if isinstance(msg.get("on"), bool):
+                    app.state.robot.nav.social = app.state.social.enabled = msg["on"]
             elif kind == "follow":
                 if msg.get("on") is True and app.state.robot.esp32.connected:
                     app.state.nudger.cancel()

@@ -15,6 +15,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from . import sfx
 from .audio import MIC_RATE
 
 log = logging.getLogger("robert.voice.live")
@@ -40,7 +41,14 @@ Herramientas:
 - seguirme: empieza a seguir a la persona que tienes delante (a 1,2 m). Úsala cuando te
   pidan que les sigas o les acompañes. Si responde que no ve a nadie, pide que se ponga
   delante de ti, a menos de 3 m. Para parar: dejar_de_seguir (o parar).
+- bailar: un baile corto ("baile", "vuelta" o "celebracion") cuando te pidan bailar,
+  celebrar algo o dar una vuelta. Es cortito y seguro; anímate con gracia.
+- hacer_foto: un selfie con tu cámara (cuenta atrás con pitidos incluida). Avisa de que
+  se pongan delante y sonrían ANTES de llamarla; después di que está en la app.
+- modo_social: activa o desactiva saludar solo a la gente que se te acerque.
 - despedirse: cuando la persona se despida o diga que ya está.
+Si te dicen que alguien desconocido se ha acercado, salúdale con gracia, preséntate como
+Robert, el robot de Fran, y dale conversación corta; sé simpático y nunca pesado.
 Explorar no se activa por voz: di que se hace desde la app.
 Te despiertan diciendo "{wake}"; es la señal de activación, no tu nombre. Si solo oyes
 eso, no saludes ni te presentes: espera a la petición o di como mucho "¿Sí?"."""
@@ -85,6 +93,12 @@ def session_config(voice: str, silence_ms: int, state: dict | None, wake: str):
         fn("estado_robot", "Devuelve lo que el robot sabe ahora: espacio libre alrededor y si se mueve."),
         fn("seguirme", "Empieza a seguir a la persona que está delante del robot."),
         fn("dejar_de_seguir", "Deja de seguir a la persona y se para."),
+        fn("bailar", "Hace un baile corto y seguro.",
+           {"type": "object", "required": ["estilo"],
+            "properties": {"estilo": {"type": "string", "enum": ["baile", "vuelta", "celebracion"]}}}),
+        fn("hacer_foto", "Hace un selfie con la cámara delantera tras una cuenta atrás."),
+        fn("modo_social", "Activa o desactiva saludar a la gente que se acerque.",
+           {"type": "object", "required": ["activar"], "properties": {"activar": {"type": "boolean"}}}),
         fn("despedirse", "Termina la conversación cuando la persona se despide."),
     ])]
     return types.LiveConnectConfig(
@@ -107,7 +121,9 @@ class LiveConversation:
 
     def __init__(self, client, model: str, config, mic, player, vad, backend, idle_s: float,
                  camera: Callable[[], bytes | None] = lambda: None,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic,
+                 opening: str | None = None,
+                 full_photo: Callable[[], str | None] = lambda: None):
         self._client = client
         self._model = model
         self._config = config
@@ -117,6 +133,8 @@ class LiveConversation:
         self._backend = backend
         self._idle_s = idle_s
         self._camera = camera
+        self._opening = opening          # Robert speaks first (social greeting)
+        self._full_photo = full_photo
         self._clock = clock
         self._session = None
         self._last_voice = self._last_sound = clock()
@@ -129,6 +147,12 @@ class LiveConversation:
     async def run(self) -> None:
         async with self._client.aio.live.connect(model=self._model, config=self._config) as session:
             self._session = session
+            if self._opening:
+                from google.genai import types
+
+                await session.send_client_content(
+                    turns=types.Content(role="user", parts=[types.Part.from_text(text=self._opening)]),
+                    turn_complete=True)
             tasks = [asyncio.create_task(self._send_mic()), asyncio.create_task(self._receive()),
                      asyncio.create_task(self._watch())]
             try:
@@ -230,6 +254,14 @@ class LiveConversation:
                 return {"ok": False, "reason": "no veo a nadie delante, a menos de 3 m"}
         return {"ok": False, "reason": "no veo a nadie delante, a menos de 3 m"}
 
+    async def _sound(self, pcm: bytes) -> None:
+        """Plays an effect with the mic shut (so it is not heard as speech) and waits for it."""
+        self._mic.mute(True)
+        self._player.write(pcm)
+        await asyncio.sleep(self._player.remaining_s())
+        if not self._speaking:
+            self._mic.mute(False)
+
     async def _tools(self, calls) -> None:
         from google.genai import types
 
@@ -259,6 +291,19 @@ class LiveConversation:
             return await self._start_follow()
         if name == "dejar_de_seguir":
             return await asyncio.to_thread(self._backend.command, "follow_off")
+        if name == "bailar":
+            estilo = args.get("estilo") or "baile"
+            await self._sound(sfx.chirps())
+            return await asyncio.to_thread(self._backend.command, "dance", estilo)
+        if name == "hacer_foto":
+            await self._sound(sfx.countdown())
+            name_jpg = await asyncio.to_thread(self._full_photo)
+            await self._sound(sfx.shutter())
+            return ({"ok": True, "foto": name_jpg, "donde": "en la app, sección Fotos"} if name_jpg
+                    else {"ok": False, "reason": "la cámara no responde"})
+        if name == "modo_social":
+            on = bool(args.get("activar"))
+            return await asyncio.to_thread(self._backend.command, "social_on" if on else "social_off")
         if name == "mirar":
             jpeg = await asyncio.to_thread(self._camera)
             return jpeg if jpeg is not None else {"ok": False, "reason": "la cámara no responde"}

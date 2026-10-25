@@ -55,6 +55,8 @@ class NavState:
     footprint: list[float] = field(default_factory=list)   # [length, width, margin] m
     blind: list[list[int]] = field(default_factory=list)   # masked [first, last] bins
     follow: dict = field(default_factory=dict)              # state, distance_m, bearing_deg
+    social: bool = False               # greet people who stop in front (social mode)
+    dancing: bool = False
 
 
 @dataclass

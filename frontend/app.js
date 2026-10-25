@@ -99,6 +99,32 @@ for (const btn of dirButtons) {
 }
 
 $("stop").addEventListener("pointerdown", (e) => { e.preventDefault(); stop(); });
+$("social").addEventListener("click", () => {
+  send({ type: "social", on: $("social").getAttribute("aria-pressed") !== "true" });
+});
+
+async function loadPhotos() {
+  try {
+    const r = await fetch("/api/photos");
+    const { photos } = await r.json();
+    const list = $("photo-list");
+    list.replaceChildren(...photos.map((name) => {
+      const a = document.createElement("a");
+      a.href = `/api/photos/${encodeURIComponent(name)}`;
+      a.download = name;
+      const img = document.createElement("img");
+      img.src = a.href;
+      img.alt = name;
+      img.loading = "lazy";
+      a.append(img);
+      return a;
+    }));
+  } catch (_) {}
+}
+$("photos-refresh").addEventListener("click", loadPhotos);
+setInterval(loadPhotos, 15000);
+loadPhotos();
+
 $("follow").addEventListener("click", () => {
   if (!espConnected) return;
   const on = $("follow").getAttribute("aria-pressed") !== "true";
@@ -199,6 +225,9 @@ function render(state) {
 
   lastNav = nav;
   renderFollow(nav);
+  const social = $("social");
+  social.setAttribute("aria-pressed", String(!!nav.social));
+  social.textContent = nav.social ? "Modo social: saludo a quien se acerque" : "Modo social";
   const gi = $("guard-info");
   gi.textContent = nav.stuck ? "Atascado: autónomo desactivado"
     : nav.limited_by ? `Frenada LiDAR: ${nav.limited_by}` : "";

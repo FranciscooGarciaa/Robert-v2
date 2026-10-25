@@ -39,6 +39,7 @@
     <div class="auto-buttons">
       <button id="explore" type="button" class="explore" aria-pressed="false">Explorar</button>
       <button id="follow" type="button" class="explore" aria-pressed="false">Seguirme</button>
+      <button id="social" type="button" class="explore" aria-pressed="false">Modo social</button>
     </div>
     <p id="follow-info" class="note"></p>
     <p class="note">Explorar: solo con esta pantalla abierta. Seguirme: se para si te pierde, si te alejas
@@ -61,6 +62,12 @@
   <section class="speed">
     <label for="speed">Velocidad <span id="speed-value">80</span> / <span id="speed-max">—</span></label>
     <input id="speed" type="range" min="40" max="180" step="5" value="80">
+  </section>
+
+  <section class="photos">
+    <h2>Fotos <button id="photos-refresh" type="button">Actualizar</button></h2>
+    <p class="note">Están en la RAM del robot: descárgalas antes de apagarlo.</p>
+    <div id="photo-list" class="photo-list"></div>
   </section>
 
   <button id="stop" class="stop">STOP</button>

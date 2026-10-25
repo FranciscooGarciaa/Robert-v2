@@ -80,7 +80,7 @@ class FakeBackend:
     def __init__(self):
         self.commands, self.reports = [], []
 
-    def command(self, action):
+    def command(self, action, style=None):
         self.commands.append(action)
         return {"ok": True}
 
@@ -186,3 +186,36 @@ def test_follow_tool_reports_when_it_found_someone():
     asyncio.run(asyncio.wait_for(talk.run(), 10))
     assert backend.commands == ["follow"]
     assert session.tool_responses[0].response == {"ok": True, "estado": "te sigo; estás a 1.8 m"}
+
+
+def test_fun_tools_reach_the_backend():
+    class FunBackend(FakeBackend):
+        def command(self, action, style=None):
+            self.commands.append((action, style))
+            return {"ok": True}
+
+    session, mic, player = FakeSession([[tool("bailar", estilo="vuelta")], [tool("modo_social", activar=True)],
+                                        [tool("hacer_foto")]]), FakeMic(), FakePlayer()
+    backend = FunBackend()
+    talk = LiveConversation(FakeClient(session), "m", None, mic, player, NS(is_speech=lambda f: False),
+                            backend, 0.5, full_photo=lambda: "robert-1.jpg")
+    asyncio.run(asyncio.wait_for(talk.run(), 10))
+    assert backend.commands == [("dance", "vuelta"), ("social_on", None)]
+    assert session.tool_responses[2].response["foto"] == "robert-1.jpg"
+    assert len(player.written) >= 3            # chirps, countdown, shutter
+
+
+def test_opening_line_makes_robert_speak_first():
+    class OpeningSession(FakeSession):
+        def __init__(self, turns):
+            super().__init__(turns)
+            self.client_content = []
+
+        async def send_client_content(self, turns, turn_complete):
+            self.client_content.append(turns.parts[0].text)
+
+    session = OpeningSession([])
+    talk = LiveConversation(FakeClient(session), "m", None, FakeMic(), FakePlayer(), NS(is_speech=lambda f: False),
+                            FakeBackend(), 0.3, opening="Saluda")
+    asyncio.run(asyncio.wait_for(talk.run(), 5))
+    assert session.client_content == ["Saluda"]

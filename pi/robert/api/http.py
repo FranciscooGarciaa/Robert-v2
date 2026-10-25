@@ -3,6 +3,9 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from fastapi.responses import FileResponse
+
+from ..robot.dance import ROUTINES
 from ..robot.nudge import MOVES
 
 router = APIRouter(prefix="/api")
@@ -50,6 +53,7 @@ class VoiceEvent(BaseModel):
 
 class VoiceCommand(BaseModel):
     action: str
+    style: str | None = None
 
 
 class VisionPeople(BaseModel):
@@ -75,6 +79,17 @@ async def voice_command(cmd: VoiceCommand, request: Request) -> dict:
     app = request.app.state
     if cmd.action == "stop":
         app.motion.stop("voice_stop")
+    elif cmd.action == "dance":
+        style = cmd.style or "baile"
+        if style not in ROUTINES:
+            raise HTTPException(status_code=400, detail="unknown dance")
+        if not app.robot.esp32.connected:
+            return {"ok": False, "reason": "esp32_disconnected"}
+        app.autonomy.disarm()
+        app.nudger.cancel()
+        app.dancer.start(style)
+    elif cmd.action in ("social_on", "social_off"):
+        app.robot.nav.social = app.social.enabled = cmd.action == "social_on"
     elif cmd.action == "follow_off":
         app.motion.stop("voice_follow_off")
     elif cmd.action == "follow":
@@ -99,3 +114,25 @@ def vision_people(body: VisionPeople, request: Request) -> dict:
     v.people = body.people
     v.updated = time.monotonic()
     return {"ok": True}
+
+
+# --- selfies taken by the vision service --------------------------------------
+
+def _photos_dir(request: Request):
+    return request.app.state.settings.photos_dir
+
+
+@router.get("/photos")
+def photos(request: Request) -> dict:
+    d = _photos_dir(request)
+    files = sorted(d.glob("robert-*.jpg"), reverse=True) if d.is_dir() else []
+    return {"photos": [f.name for f in files[:30]]}
+
+
+@router.get("/photos/{name}")
+def photo(name: str, request: Request) -> FileResponse:
+    d = _photos_dir(request).resolve()
+    path = (d / name).resolve()
+    if path.parent != d or not name.startswith("robert-") or not path.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(path, media_type="image/jpeg", filename=name)

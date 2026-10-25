@@ -49,9 +49,10 @@ class Backend:
             except OSError:
                 pass
 
-    def command(self, action: str) -> dict:
+    def command(self, action: str, style: str | None = None) -> dict:
+        body = {"action": action} if style is None else {"action": action, "style": style}
         try:
-            return self._call("/api/voice/command", {"action": action})
+            return self._call("/api/voice/command", body)
         except OSError as exc:
             log.warning("command %s failed: %r", action, exc)
             return {"ok": False, "reason": "el controlador no responde"}

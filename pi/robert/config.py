@@ -67,9 +67,10 @@ class Settings:
     # Follow me (you are the dead-man: losing you stops it).
     follow_distance_m: float = 1.2       # from the robot centre
     follow_stop_m: float = 1.0           # closer than this: stand still
-    follow_max_m: float = 3.0            # farther than this: stop and give up
-    follow_max_speed: int = 100
+    follow_max_m: float = 4.5            # farther than this: stop and give up
+    follow_max_speed: int = 200          # ~0.95 m/s: brisk walk / gentle jog
     follow_timeout_s: float = 600.0
+    photos_dir: Path = Path.home() / "robert-photos"   # selfies (RAM while the SD is protected)
     http_host: str = "0.0.0.0"
     http_port: int = 8000
     frontend_dir: Path = ROOT.parent / "frontend"
@@ -120,6 +121,7 @@ class Settings:
             follow_max_m=float(e.get("FOLLOW_MAX_M", cls.follow_max_m)),
             follow_max_speed=int(e.get("FOLLOW_MAX_SPEED", cls.follow_max_speed)),
             follow_timeout_s=float(e.get("FOLLOW_TIMEOUT_S", cls.follow_timeout_s)),
+            photos_dir=Path(e.get("PHOTOS_DIR", cls.photos_dir)),
             http_host=e.get("HTTP_HOST", cls.http_host),
             http_port=int(e.get("HTTP_PORT", cls.http_port)),
             frontend_dir=Path(e.get("FRONTEND_DIR", cls.frontend_dir)),

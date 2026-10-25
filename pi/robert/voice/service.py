@@ -11,7 +11,9 @@ import asyncio
 import logging
 import threading
 
-from . import assets, camera
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from . import assets, camera, sfx
 from .audio import Mic, StreamPlayer
 from .backend import Backend
 from .config import VoiceSettings
@@ -19,6 +21,10 @@ from .listener import Vad, WakeWord
 from .live import LiveConversation, session_config, wake_phrase
 
 log = logging.getLogger("robert.voice")
+
+GREET_PORT = 8001
+GREETING = ("Se acaba de parar delante de ti una persona desconocida. Salúdala con gracia, "
+            "preséntate como Robert, el robot de Fran, y hazle una pregunta corta.")
 
 
 class VoiceService:
@@ -34,15 +40,33 @@ class VoiceService:
         self.backend = Backend(s.backend_url)
         self.beep = assets.beep()
         self.no_network = assets.phrase("no_network", s.assets_dir, s.piper_voice)
+        self.greet = threading.Event()  # set by POST /greet (backend, social mode)
 
-    async def conversation(self) -> None:
+    def serve_local(self) -> None:
+        """127.0.0.1:8001 — POST /greet: start a conversation without the wake word."""
+        service = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                if self.path != "/greet":
+                    return self.send_error(404)
+                service.greet.set()
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        ThreadingHTTPServer(("127.0.0.1", GREET_PORT), Handler).serve_forever()
+
+    async def conversation(self, opening: str | None = None) -> None:
         s = self.s
         # Muted through the beep (so it is not sent as speech); reopened right after.
         asyncio.get_running_loop().call_later(self.player.remaining_s(), self.mic.mute, False)
         state = await asyncio.to_thread(self.backend.state)
         talk = LiveConversation(self.client, s.live_model, session_config(s.voice, s.silence_ms, state, wake_phrase(s.wake_model)),
                                 self.mic, self.player, self.vad, self.backend, s.idle_s,
-                                camera.capture_jpeg)
+                                camera.capture_jpeg, opening=opening, full_photo=camera.full_photo)
         try:
             await talk.run()
         except Exception as exc:  # noqa: BLE001 - network/API: say so, back to the wake word
@@ -53,18 +77,21 @@ class VoiceService:
     def run(self) -> None:
         self.mic.start()
         threading.Thread(target=self.backend.heartbeat, name="heartbeat", daemon=True).start()
+        threading.Thread(target=self.serve_local, name="greet", daemon=True).start()
         self.backend.report("idle")
         log.info("voice ready (wake word %r, model %s)", self.s.wake_model, self.s.live_model)
         while True:
-            self.wake.wait()
+            woke = self.wake.wait(self.greet)
+            opening = None if woke is not None else GREETING
             # The beep plays while the session connects; speech captured from
             # now on waits in the mic queue, so the first words are not lost.
             self.mic.mute(True)
-            self.player.write(self.beep)
+            self.player.write(self.beep if woke is not None else sfx.chirps(3))
             self.backend.report("listening")
             try:
-                asyncio.run(self.conversation())
+                asyncio.run(self.conversation(opening))
             finally:
+                self.greet.clear()  # a greeting asked for mid-conversation is stale now
                 self.backend.report("idle")
 
 

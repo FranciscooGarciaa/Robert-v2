@@ -13,6 +13,20 @@ log = logging.getLogger("robert.voice.camera")
 WIDTH, HEIGHT = 640, 480   # plenty for the model, small to upload (~40 kB)
 TIMEOUT_S = 5
 VISION_PHOTO = "http://127.0.0.1:8002/photo.jpg"
+VISION_FULL = "http://127.0.0.1:8002/photo/full"
+
+
+def full_photo() -> str | None:
+    """Full-resolution selfie through the vision service; returns the file name."""
+    import json
+
+    try:
+        req = urllib.request.Request(VISION_FULL, data=b"", method="POST")
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.load(r).get("file")
+    except OSError as exc:
+        log.warning("full photo failed: %r", exc)
+        return None
 
 
 def capture_jpeg() -> bytes | None:
