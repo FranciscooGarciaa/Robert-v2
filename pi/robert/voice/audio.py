@@ -28,12 +28,17 @@ class Mic:
 
     A reader thread always drains arecord (so it never overruns); while
     muted (Robert is speaking) frames are dropped instead of queued.
+
+    In remote mode (someone talking through the PWA's phone mic) the local
+    microphone is ignored and frames come from inject() instead.
     """
 
     def __init__(self, device: str):
         self._device = device
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=200)
         self._muted = threading.Event()
+        self._remote = threading.Event()
+        self._pending = b""
         self._thread = threading.Thread(target=self._run, name="mic", daemon=True)
 
     def start(self) -> None:
@@ -51,15 +56,34 @@ class Mic:
                 if skip:
                     skip -= 1
                     continue
-                if self._muted.is_set():
+                if self._muted.is_set() or self._remote.is_set():
                     continue
-                try:
-                    self._q.put_nowait(np.frombuffer(chunk, dtype=np.int16))
-                except queue.Full:  # nobody reading: keep only the latest audio
-                    self._q.get_nowait()
+                self._put(np.frombuffer(chunk, dtype=np.int16))
             log.warning("arecord stopped (rc=%s); restarting", proc.poll())
             proc.kill()
             time.sleep(0.5)
+
+    def _put(self, frame: np.ndarray) -> None:
+        try:
+            self._q.put_nowait(frame)
+        except queue.Full:  # nobody reading: keep only the latest audio
+            self._q.get_nowait()
+
+    def set_remote(self, on: bool) -> None:
+        if on and not self._remote.is_set():
+            self.flush()
+        self._pending = b""
+        (self._remote.set if on else self._remote.clear)()
+
+    def inject(self, pcm: bytes) -> None:
+        """16 kHz mono PCM16 from elsewhere (the phone), cut into FRAME-sized frames."""
+        if not self._remote.is_set() or self._muted.is_set():
+            return
+        data = self._pending + pcm
+        n = FRAME * 2
+        for i in range(0, len(data) - n + 1, n):
+            self._put(np.frombuffer(data[i:i + n], dtype=np.int16))
+        self._pending = data[len(data) - len(data) % n:]
 
     def read(self, timeout: float | None = None) -> np.ndarray | None:
         try:

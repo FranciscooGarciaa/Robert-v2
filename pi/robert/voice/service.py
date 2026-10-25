@@ -9,6 +9,7 @@ heard/said, and forwards spoken commands that the backend bounds and guards.
 
 import asyncio
 import logging
+import socket
 import threading
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,6 +24,8 @@ from .live import LiveConversation, session_config, wake_phrase
 log = logging.getLogger("robert.voice")
 
 GREET_PORT = 8001
+REMOTE_PORT = 8003        # raw PCM16 16 kHz from the PWA (via the backend), one connection per press
+END_OF_TURN_SILENCE_S = 1.0
 GREETING = ("Se acaba de parar delante de ti una persona desconocida. Salúdala con gracia, "
             "preséntate como Robert, el robot de Fran, y hazle una pregunta corta.")
 
@@ -40,7 +43,27 @@ class VoiceService:
         self.backend = Backend(s.backend_url)
         self.beep = assets.beep()
         self.no_network = assets.phrase("no_network", s.assets_dir, s.piper_voice)
-        self.greet = threading.Event()  # set by POST /greet (backend, social mode)
+        self.greet = threading.Event()  # interrupts the wake word: social greeting or phone talk
+        self.opening: str | None = None
+        self.in_conversation = threading.Event()
+
+    def serve_remote(self) -> None:
+        """127.0.0.1:8003 — someone holds the PWA's talk button: their phone audio replaces
+        the robot's mic for the rest of that conversation (it ends as usual when quiet)."""
+        srv = socket.create_server(("127.0.0.1", REMOTE_PORT))
+        while True:
+            conn, _ = srv.accept()
+            with conn:
+                log.info("phone talk: start")
+                self.mic.set_remote(True)
+                if not self.in_conversation.is_set():
+                    self.opening = None
+                    self.greet.set()
+                while chunk := conn.recv(4096):
+                    self.mic.inject(chunk)
+                # Released: a moment of silence so Gemini knows the turn is over.
+                self.mic.inject(bytes(int(END_OF_TURN_SILENCE_S * 16000) * 2))
+                log.info("phone talk: released")
 
     def serve_local(self) -> None:
         """127.0.0.1:8001 — POST /greet: start a conversation without the wake word."""
@@ -50,6 +73,7 @@ class VoiceService:
             def do_POST(self):
                 if self.path != "/greet":
                     return self.send_error(404)
+                service.opening = GREETING
                 service.greet.set()
                 self.send_response(204)
                 self.end_headers()
@@ -78,19 +102,23 @@ class VoiceService:
         self.mic.start()
         threading.Thread(target=self.backend.heartbeat, name="heartbeat", daemon=True).start()
         threading.Thread(target=self.serve_local, name="greet", daemon=True).start()
+        threading.Thread(target=self.serve_remote, name="phone-talk", daemon=True).start()
         self.backend.report("idle")
         log.info("voice ready (wake word %r, model %s)", self.s.wake_model, self.s.live_model)
         while True:
             woke = self.wake.wait(self.greet)
-            opening = None if woke is not None else GREETING
+            opening = None if woke is not None else self.opening
+            self.in_conversation.set()
             # The beep plays while the session connects; speech captured from
             # now on waits in the mic queue, so the first words are not lost.
             self.mic.mute(True)
-            self.player.write(self.beep if woke is not None else sfx.chirps(3))
+            self.player.write(sfx.chirps(3) if opening else self.beep)
             self.backend.report("listening")
             try:
                 asyncio.run(self.conversation(opening))
             finally:
+                self.in_conversation.clear()
+                self.mic.set_remote(False)
                 self.greet.clear()  # a greeting asked for mid-conversation is stale now
                 self.backend.report("idle")
 

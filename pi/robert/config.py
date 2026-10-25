@@ -73,6 +73,8 @@ class Settings:
     photos_dir: Path = Path.home() / "robert-photos"   # selfies (RAM while the SD is protected)
     http_host: str = "0.0.0.0"
     http_port: int = 8000
+    https_port: int = 8443               # same app over TLS (phone mic needs a secure page)
+    certs_dir: Path = ROOT / "certs"     # tools/make_certs.sh
     frontend_dir: Path = ROOT.parent / "frontend"
 
     @classmethod
@@ -124,5 +126,7 @@ class Settings:
             photos_dir=Path(e.get("PHOTOS_DIR", cls.photos_dir)),
             http_host=e.get("HTTP_HOST", cls.http_host),
             http_port=int(e.get("HTTP_PORT", cls.http_port)),
+            https_port=int(e.get("HTTPS_PORT", cls.https_port)),
+            certs_dir=Path(e.get("CERTS_DIR", cls.certs_dir)),
             frontend_dir=Path(e.get("FRONTEND_DIR", cls.frontend_dir)),
         )

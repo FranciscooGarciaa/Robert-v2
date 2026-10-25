@@ -148,8 +148,21 @@ def main() -> None:
     settings = Settings.from_env()
     if not settings.esp32_token:
         log.warning("ESP32_TOKEN is empty; the ESP32 will reject the handshake")
-    uvicorn.run(create_app(settings), host=settings.http_host, port=settings.http_port,
-                log_level="warning")
+    app = create_app(settings)
+    servers = [uvicorn.Server(uvicorn.Config(app, host=settings.http_host, port=settings.http_port,
+                                             log_level="warning"))]
+    cert, key = settings.certs_dir / "server.crt", settings.certs_dir / "server.key"
+    if cert.is_file() and key.is_file():
+        # Same app over HTTPS; lifespan off so the ESP32 link, LiDAR, etc. start only once.
+        servers.append(uvicorn.Server(uvicorn.Config(
+            app, host=settings.http_host, port=settings.https_port, log_level="warning",
+            ssl_certfile=str(cert), ssl_keyfile=str(key), lifespan="off")))
+        log.info("HTTPS on port %d", settings.https_port)
+
+    async def serve() -> None:
+        await asyncio.gather(*(s.serve() for s in servers))
+
+    asyncio.run(serve())
 
 
 if __name__ == "__main__":

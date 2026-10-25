@@ -100,3 +100,31 @@ async def control_socket(ws: WebSocket) -> None:
         motion.release(client_id)
         autonomy.release(client_id)
         log.info("%s disconnected", client_id)
+
+
+VOICE_TALK = ("127.0.0.1", 8003)
+
+
+@router.websocket("/ws/talk")
+async def talk_socket(ws: WebSocket) -> None:
+    """Push-to-talk from the PWA: binary frames of 16 kHz mono PCM16 from the phone's mic,
+    passed straight to the voice service, which uses them instead of the robot's mic.
+    Closing the socket (button released) ends the turn."""
+    await ws.accept()
+    try:
+        _, writer = await asyncio.open_connection(*VOICE_TALK)
+    except OSError:
+        await ws.close(code=1011, reason="voice service down")
+        return
+    try:
+        while True:
+            msg = await ws.receive()
+            if msg["type"] == "websocket.disconnect":
+                break
+            if msg.get("bytes"):
+                writer.write(msg["bytes"])
+                await writer.drain()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        writer.close()

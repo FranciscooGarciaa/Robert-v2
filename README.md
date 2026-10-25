@@ -116,6 +116,12 @@ Medidas (2026‑10‑22): 325 × 160 mm, LiDAR en el centro (valores por defecto
   con cuenta atrás, en la sección Fotos de la PWA; vive en RAM: descargar antes de apagar), modo social
   (saluda a quien se para delante 2 s, una vez por minuto, nunca en movimiento).
 
+### Hablarle desde el móvil (botón "Mantén pulsado para hablarle")
+El iPhone solo deja usar el micro en una página segura, así que la PWA también va por
+**https://robert.local:8443** con un certificado propio (`tools/make_certs.sh`, en `pi/certs/`, fuera de git).
+Una vez: pasar `pi/certs/robert-ca.crt` al iPhone (AirDrop) → Ajustes → General → VPN y gestión de dispositivos →
+instalar el perfil → Ajustes → General → Información → Ajustes de confianza de certificados → activar "Robert local CA".
+
 ## Pruebas de banco (RUEDAS EN EL AIRE)
 
 Desde el Mac, sin Pi (`export ESP32_TOKEN=...`):

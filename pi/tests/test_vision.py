@@ -51,3 +51,19 @@ def test_service_people_are_json_ready(monkeypatch):
     people = v.people(frame)
     json.dumps(people)
     assert people[0]["bearing_deg"] > 0   # left half of the image = left of the robot
+
+
+def test_mic_inject_frames_only_in_remote_mode_and_not_while_muted():
+    from robert.voice.audio import FRAME, Mic
+
+    mic = Mic("none")                       # reader thread not started: no arecord needed
+    mic.inject(b"\x01\x00" * FRAME)
+    assert mic.read(timeout=0) is None      # not in remote mode: ignored
+    mic.set_remote(True)
+    mic.inject(b"\x01\x00" * (FRAME + 100))  # one frame and a bit
+    assert mic.read(timeout=0).size == FRAME and mic.read(timeout=0) is None
+    mic.inject(b"\x01\x00" * (FRAME - 100))  # the leftover completes a second frame
+    assert mic.read(timeout=0) is not None
+    mic.mute(True)
+    mic.inject(b"\x01\x00" * FRAME)
+    assert mic.read(timeout=0) is None      # Robert is speaking: dropped

@@ -255,6 +255,81 @@ function renderVoice(v) {
   $("voice-reply").textContent = v.reply ? `Robert: “${v.reply}”` : "";
 }
 
+// --- push-to-talk: the phone's mic becomes Robert's ears -----------------------
+// Streams 16 kHz mono PCM16 over /ws/talk while the button is held; Robert answers
+// through his own speaker. Browsers only allow the mic on a secure (HTTPS) page.
+
+const TALK_RATE = 16000;
+let talk = null;
+
+function talkNote(text) { $("talk-note").textContent = text; }
+
+if (!window.isSecureContext) {
+  const secure = `https://${location.hostname}:8443${location.pathname}`;
+  $("talk-note").innerHTML = `Para hablar desde el móvil abre la versión segura: <a href="${secure}">${secure}</a>`;
+}
+
+async function startTalk() {
+  if (talk || !window.isSecureContext) return;
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  talk = { ctx };
+  try {
+    await ctx.resume();
+    const stream = await navigator.mediaDevices.getUserMedia(
+      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    if (!talk) { stream.getTracks().forEach((t) => t.stop()); ctx.close(); return; }  // released already
+    const sock = new WebSocket(`wss://${location.host}/ws/talk`);
+    sock.binaryType = "arraybuffer";
+    const src = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const ratio = ctx.sampleRate / TALK_RATE;
+    proc.onaudioprocess = (e) => {
+      if (sock.readyState !== WebSocket.OPEN) return;
+      const x = e.inputBuffer.getChannelData(0);
+      const n = Math.floor(x.length / ratio);
+      const out = new Int16Array(n);
+      for (let i = 0; i < n; i++) {  // average each window: a cheap anti-alias filter
+        let sum = 0;
+        const a = Math.floor(i * ratio), b = Math.floor((i + 1) * ratio);
+        for (let j = a; j < b; j++) sum += x[j];
+        out[i] = Math.max(-1, Math.min(1, sum / (b - a))) * 32767;
+      }
+      sock.send(out.buffer);
+    };
+    src.connect(proc);
+    proc.connect(ctx.destination);
+    Object.assign(talk, { stream, src, proc, sock });
+    $("talk").classList.add("active");
+    talkNote("Te escucha… suelta cuando acabes");
+  } catch (err) {
+    talkNote(`No puedo usar el micro: ${err.message}`);
+    stopTalk();
+  }
+}
+
+function stopTalk() {
+  if (!talk) return;
+  const t = talk;
+  talk = null;
+  $("talk").classList.remove("active");
+  try { t.proc?.disconnect(); t.src?.disconnect(); } catch (_) {}
+  t.stream?.getTracks().forEach((tr) => tr.stop());
+  t.ctx.close();
+  // Let the last buffer go out, then closing the socket tells Robert the turn is over.
+  setTimeout(() => t.sock?.close(), 200);
+  if ($("talk-note").textContent.startsWith("Te escucha")) talkNote("");
+}
+
+const talkBtn = $("talk");
+talkBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  talkBtn.setPointerCapture(e.pointerId);
+  startTalk();
+});
+for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) talkBtn.addEventListener(ev, stopTalk);
+talkBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+window.addEventListener("pagehide", stopTalk);
+
 // --- LiDAR radar ---------------------------------------------------------------
 // bins[i] = nearest return (mm) between i and i+1 degrees, clockwise from the
 // robot front; 0 = nothing seen. Front is drawn up.

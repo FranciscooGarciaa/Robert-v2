@@ -45,7 +45,7 @@ fi
 echo "== code + secrets"
 ssh_pi 'mkdir -p ~/robert ~/robert-models/piper'
 rsync -az --delete -e "ssh $SSH_OPTS" --exclude .venv --exclude __pycache__ --exclude .pytest_cache \
-  --exclude .env "$ROOT/pi" "$ROOT/frontend" "$ROOT/ros" "$PI:robert/"
+  --exclude .env --exclude robert-ca.key --exclude robert-ca.srl "$ROOT/pi" "$ROOT/frontend" "$ROOT/ros" "$PI:robert/"
 scp -q $SSH_OPTS "$ROOT/pi/.env" "$PI:robert/pi/.env"
 ssh_pi 'chmod 600 ~/robert/pi/.env'
 
