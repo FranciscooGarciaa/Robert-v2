@@ -38,7 +38,7 @@ Herramientas:
   pregunten qué ves, quién está, qué es algo o cómo es lo que tienes delante. Describe
   solo lo que aparece en la foto; si no se ve bien, dilo.
 - estado_robot: distancias del LiDAR alrededor y si te mueves. No inventes distancias.
-- seguirme: empieza a seguir a la persona que tienes delante (de cerca, a unos 80 cm). Úsala cuando te
+- seguirme: empieza a seguir a la persona que tienes delante (muy de cerca, a unos 60 cm). Úsala cuando te
   pidan que les sigas o les acompañes. Si responde que no ve a nadie, pide que se ponga
   delante de ti, a menos de 3 m. Para parar: dejar_de_seguir (o parar).
 - bailar: un baile corto ("baile", "vuelta" o "celebracion") cuando te pidan bailar,
