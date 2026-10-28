@@ -317,7 +317,9 @@ class Memory:
                          + (f"; {done}" if done else "") + ".")
             if s["stories"]:
                 lines.append("Lo que has vivido (tus recuerdos, contados por ti):")
-                lines += [f"- ({_when(x['t'])[:10]}) {x['text']}" for x in s["stories"][-RECALL_STORIES:]]
+                # Oldest first: seeded memories of his first body can arrive after newer ones.
+                stories = sorted(s["stories"], key=lambda x: x["t"])[-RECALL_STORIES:]
+                lines += [f"- ({_when(x['t'])[:10]}) {x['text']}" for x in stories]
             if s["notes"]:
                 lines.append("Cosas que te han pedido recordar:")
                 lines += [f"- ({_when(n['t'])}) {n['text']}" for n in s["notes"][-RECALL_NOTES:]]
