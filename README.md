@@ -122,6 +122,25 @@ El iPhone solo deja usar el micro en una página segura, así que la PWA tambié
 Una vez: pasar `pi/certs/robert-ca.crt` al iPhone (AirDrop) → Ajustes → General → VPN y gestión de dispositivos →
 instalar el perfil → Ajustes → General → Información → Ajustes de confianza de certificados → activar "Robert local CA".
 
+## Memoria (`pi/robert/memory.py`)
+
+Robert apunta lo que vive: cada arranque del backend es una **sesión** con su diario
+(`~/robert-memory/sessions/<id>.jsonl`, un evento JSON por línea) y `memory.json` guarda lo que perdura
+entre sesiones: totales, últimas sesiones, **vivencias** (recuerdos en primera persona; las primeras, el día
+de calle, vienen en `pi/memory_seed.json`), notas que le piden recordar y sus últimas charlas.
+
+- Eventos: conversaciones (lo que oyó y contestó), órdenes de voz, fotos, bailes, seguirme (y por qué acabó),
+  explorar, atascos, saludos del modo social, pérdidas del ESP32 y paradas de seguridad. Lo que no le cuentan
+  lo observa del `RobotState` en cada tick (`Memory.observe()`): solo apunta cambios.
+- Voz: al empezar cada conversación recibe `GET /api/memory/recall` (unas líneas en español) en el prompt.
+  Herramientas `recordar` (qué recuerda) y `apuntar` («acuérdate de que me llamo Marta»).
+- API: `GET /api/memory`, `/api/memory/session`, `/api/memory/recall`; `POST /api/memory/note|story|event`
+  (solo desde la Pi).
+- Con la SD protegida la memoria vive en RAM como las fotos: `pi/scripts/pull_memory.sh` la copia al Mac
+  (`pi/memory/`, fuera de git) y `pull_memory.sh push` la devuelve. Si no puede escribir, sigue en RAM.
+
+Detalles, formato y ejemplos: `docs/memoria.md`.
+
 ## Pruebas de banco (RUEDAS EN EL AIRE)
 
 Desde el Mac, sin Pi (`export ESP32_TOKEN=...`):

@@ -78,7 +78,7 @@ class FakePlayer:
 
 class FakeBackend:
     def __init__(self):
-        self.commands, self.reports = [], []
+        self.commands, self.reports, self.memory = [], [], []
 
     def command(self, action, style=None):
         self.commands.append(action)
@@ -89,6 +89,16 @@ class FakeBackend:
 
     def report(self, state, heard=None, reply=None):
         self.reports.append((state, heard, reply))
+
+    def recall(self):
+        return "Tu memoria: te han encendido 3 veces."
+
+    def remember(self, kind, **data):
+        self.memory.append((kind, data))
+
+    def note(self, text):
+        self.memory.append(("note", text))
+        return {"ok": True}
 
 
 def content(**kw):
@@ -219,3 +229,37 @@ def test_opening_line_makes_robert_speak_first():
                             FakeBackend(), 0.3, opening="Saluda")
     asyncio.run(asyncio.wait_for(talk.run(), 5))
     assert session.client_content == ["Saluda"]
+
+
+def test_memory_tools_read_and_write_through_the_backend():
+    session, _, _, backend = converse([[tool("recordar")], [tool("apuntar", nota="Fran vive en el tercero")],
+                                       [tool("apuntar", nota="  ")]])
+    assert "encendido 3 veces" in session.tool_responses[0].response["memoria"]
+    assert backend.memory == [("note", "Fran vive en el tercero")]
+    assert session.tool_responses[2].response["ok"] is False
+
+
+def test_prompt_carries_the_memory(monkeypatch):
+    import sys
+    from robert.voice.live import session_config
+
+    captured = {}
+
+    class Stub:  # stands in for google.genai.types: anything callable, any attribute
+        def __init__(self, name=""):
+            self.name = name
+
+        def __getattr__(self, name):
+            return Stub(name)
+
+        def __call__(self, **kw):
+            if self.name == "LiveConnectConfig":
+                captured.update(kw)
+            return NS(**kw)
+
+    monkeypatch.setitem(sys.modules, "google", NS(genai=NS(types=Stub())))
+    monkeypatch.setitem(sys.modules, "google.genai", NS(types=Stub()))
+    session_config("Puck", 600, None, "Robert", memory="Tu memoria: dos fotos.")
+    assert captured["system_instruction"].endswith("Tu memoria: dos fotos.")
+    names = [f.name for f in captured["tools"][0].function_declarations]
+    assert "recordar" in names and "apuntar" in names

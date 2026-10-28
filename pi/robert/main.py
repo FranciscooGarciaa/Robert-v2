@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import http, ws
 from .config import Settings
+from .memory import Memory
 from .robot.esp32_client import Esp32Client
 from .robot.lidar import LidarReader, ScanAssembler
 from .nav.autonomy import TICK_S, Autonomy
@@ -39,7 +40,7 @@ VOICE_URL = "http://127.0.0.1:8001"
 VOICE_BUSY = ("listening", "thinking", "speaking")
 
 
-def greet_if_person() -> None:
+def greet_if_person(memory: Memory | None = None) -> None:
     """Social mode: one camera check, then ask the voice to say hello (never blocks the loop)."""
     def call() -> None:
         try:
@@ -50,6 +51,8 @@ def greet_if_person() -> None:
             req = urllib.request.Request(f"{VOICE_URL}/greet", data=b"", method="POST")
             urllib.request.urlopen(req, timeout=2).close()
             log.info("social: greeting someone in front")
+            if memory:
+                memory.record("greeting", people=len(people))
         except OSError as exc:
             log.warning("social greeting failed: %r", exc)
 
@@ -84,6 +87,7 @@ def create_app(settings: Settings, start_esp32: bool = True,
     nudger = Nudger(motion)
     dancer = Dancer(motion)
     social = SocialGreeter()
+    memory = Memory(settings.memory_dir, settings.memory_enabled, seed=settings.memory_seed)
     esp32 = Esp32Client(settings, robot, motion)
     lidar = None
     if settings.lidar_enabled and start_lidar:
@@ -102,7 +106,8 @@ def create_app(settings: Settings, start_esp32: bool = True,
                     or robot.voice.state in VOICE_BUSY)
             robot.nav.dancing = dancer.active
             if social.update(scan.points(), busy, time.monotonic()):
-                greet_if_person()
+                greet_if_person(memory)
+            memory.observe(robot)
             await asyncio.sleep(TICK_S)
 
     @asynccontextmanager
@@ -116,6 +121,7 @@ def create_app(settings: Settings, start_esp32: bool = True,
             yield
         finally:
             motion.stop("shutdown")
+            memory.close()
             nav_task.cancel()
             if lidar:
                 lidar.stop()
@@ -134,6 +140,7 @@ def create_app(settings: Settings, start_esp32: bool = True,
     app.state.nudger = nudger
     app.state.dancer = dancer
     app.state.social = social
+    app.state.memory = memory
     app.include_router(http.router)
     app.include_router(ws.router)
     if settings.frontend_dir.is_dir():

@@ -46,7 +46,14 @@ Herramientas:
 - hacer_foto: un selfie con tu cámara (cuenta atrás con pitidos incluida). Avisa de que
   se pongan delante y sonrían ANTES de llamarla; después di que está en la app.
 - modo_social: activa o desactiva saludar solo a la gente que se te acerque.
+- recordar: consulta tu memoria (lo que has vivido en sesiones anteriores, notas guardadas,
+  conversaciones recientes). Úsala si te preguntan qué recuerdas, qué hiciste otro día o si te
+  acuerdas de algo. Lo que no esté en tu memoria, no lo recuerdas: dilo con naturalidad.
+- apuntar: guarda en tu memoria algo que te pidan recordar (un nombre, un dato, un encargo),
+  en una frase corta y clara. Después confirma que lo has apuntado.
 - despedirse: cuando la persona se despida o diga que ya está.
+Al final tienes tu memoria: lo que has vivido hasta ahora. Puedes mencionarlo si viene a cuento
+(por ejemplo, si ya conoces a alguien o te preguntan por tu día), sin recitarla.
 Si te dicen que alguien desconocido se ha acercado, salúdale con gracia, preséntate como
 Robert, el robot de Fran, y dale conversación corta; sé simpático y nunca pesado.
 Explorar no se activa por voz: di que se hace desde la app.
@@ -78,7 +85,8 @@ def wake_phrase(model: str) -> str:
     return name.replace("_", " ").title()
 
 
-def session_config(voice: str, silence_ms: int, state: dict | None, wake: str):
+def session_config(voice: str, silence_ms: int, state: dict | None, wake: str,
+                   memory: str | None = None):
     from google.genai import types
 
     def fn(name, description, parameters=None):
@@ -99,11 +107,19 @@ def session_config(voice: str, silence_ms: int, state: dict | None, wake: str):
         fn("hacer_foto", "Hace un selfie con la cámara delantera tras una cuenta atrás."),
         fn("modo_social", "Activa o desactiva saludar a la gente que se acerque.",
            {"type": "object", "required": ["activar"], "properties": {"activar": {"type": "boolean"}}}),
+        fn("recordar", "Consulta la memoria del robot: sesiones anteriores, notas guardadas y "
+                       "conversaciones recientes."),
+        fn("apuntar", "Guarda en la memoria del robot algo que le piden recordar.",
+           {"type": "object", "required": ["nota"],
+            "properties": {"nota": {"type": "string", "description": "Una frase corta y clara."}}}),
         fn("despedirse", "Termina la conversación cuando la persona se despide."),
     ])]
+    instruction = SYSTEM_PROMPT.format(wake=wake) + "\n\n" + describe_state(state)
+    if memory:
+        instruction += "\n\n" + memory
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
-        system_instruction=SYSTEM_PROMPT.format(wake=wake) + "\n\n" + describe_state(state),
+        system_instruction=instruction,
         tools=tools,
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
@@ -299,8 +315,18 @@ class LiveConversation:
             await self._sound(sfx.countdown())
             name_jpg = await asyncio.to_thread(self._full_photo)
             await self._sound(sfx.shutter())
-            return ({"ok": True, "foto": name_jpg, "donde": "en la app, sección Fotos"} if name_jpg
-                    else {"ok": False, "reason": "la cámara no responde"})
+            if not name_jpg:
+                return {"ok": False, "reason": "la cámara no responde"}
+            await asyncio.to_thread(self._backend.remember, "photo", file=name_jpg)
+            return {"ok": True, "foto": name_jpg, "donde": "en la app, sección Fotos"}
+        if name == "recordar":
+            text = await asyncio.to_thread(self._backend.recall)
+            return {"memoria": text or "No tengo acceso a mi memoria ahora mismo."}
+        if name == "apuntar":
+            nota = (args.get("nota") or "").strip()
+            if not nota:
+                return {"ok": False, "reason": "nota vacía"}
+            return await asyncio.to_thread(self._backend.note, nota)
         if name == "modo_social":
             on = bool(args.get("activar"))
             return await asyncio.to_thread(self._backend.command, "social_on" if on else "social_off")

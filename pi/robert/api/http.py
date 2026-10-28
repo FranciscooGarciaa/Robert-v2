@@ -70,6 +70,9 @@ def voice_event(event: VoiceEvent, request: Request) -> dict:
     if event.reply is not None:
         v.reply = event.reply
     v.updated = time.monotonic()
+    # The voice reports a finished turn as "listening" + what was heard and said.
+    if event.state == "listening" and (event.heard or event.reply):
+        request.app.state.memory.record("talk", heard=event.heard, reply=event.reply)
     return {"ok": True}
 
 
@@ -104,7 +107,70 @@ async def voice_command(cmd: VoiceCommand, request: Request) -> dict:
         app.nudger.start(cmd.action)
     else:
         raise HTTPException(status_code=400, detail="unknown action")
+    app.memory.record("command", action=cmd.action, style=cmd.style)
     return {"ok": True}
+
+
+# --- memory (what Robert has lived through; see robert/memory.py) ------------
+
+class MemoryEvent(BaseModel):
+    kind: str
+    data: dict = {}
+
+
+class MemoryNote(BaseModel):
+    text: str
+
+
+class MemoryStory(BaseModel):
+    text: str
+    when: str | None = None   # "2026-10-25": when it happened, if not today
+
+
+@router.get("/memory")
+def memory_summary(request: Request) -> dict:
+    """memory.json: totals, last sessions, notes and recent conversations."""
+    return request.app.state.memory.snapshot()
+
+
+@router.get("/memory/session")
+def memory_session(request: Request) -> dict:
+    """The diary of the current session (one event per line on disk)."""
+    m = request.app.state.memory
+    return {"session": m.session_id, "events": m.diary()}
+
+
+@router.get("/memory/recall")
+def memory_recall(request: Request) -> dict:
+    """What the voice puts in Robert's prompt."""
+    return {"text": request.app.state.memory.recall()}
+
+
+@router.post("/memory/event")
+def memory_event(event: MemoryEvent, request: Request) -> dict:
+    _local_only(request)
+    if event.kind in ("boot", "shutdown") or not event.kind.isidentifier():
+        raise HTTPException(status_code=400, detail="bad kind")
+    return {"ok": True, "event": request.app.state.memory.record(event.kind, **event.data)}
+
+
+@router.post("/memory/note")
+def memory_note(note: MemoryNote, request: Request) -> dict:
+    _local_only(request)
+    event = request.app.state.memory.note(note.text)
+    if event is None:
+        raise HTTPException(status_code=400, detail="empty note")
+    return {"ok": True, "event": event}
+
+
+@router.post("/memory/story")
+def memory_story(story: MemoryStory, request: Request) -> dict:
+    """Adds a story in Robert's own voice (what he lived through) to his memory."""
+    _local_only(request)
+    event = request.app.state.memory.story(story.text, story.when)
+    if event is None:
+        raise HTTPException(status_code=400, detail="empty story")
+    return {"ok": True, "event": event}
 
 
 @router.post("/vision/people")

@@ -71,6 +71,9 @@ class Settings:
     follow_max_speed: int = 200          # ~0.95 m/s: brisk walk / gentle jog
     follow_timeout_s: float = 600.0
     photos_dir: Path = Path.home() / "robert-photos"   # selfies (RAM while the SD is protected)
+    memory_enabled: bool = True
+    memory_dir: Path = Path.home() / "robert-memory"   # session diaries + memory.json (see memory.py)
+    memory_seed: Path = ROOT / "memory_seed.json"      # stories Robert starts with (in the repo)
     http_host: str = "0.0.0.0"
     http_port: int = 8000
     https_port: int = 8443               # same app over TLS (phone mic needs a secure page)
@@ -124,6 +127,9 @@ class Settings:
             follow_max_speed=int(e.get("FOLLOW_MAX_SPEED", cls.follow_max_speed)),
             follow_timeout_s=float(e.get("FOLLOW_TIMEOUT_S", cls.follow_timeout_s)),
             photos_dir=Path(e.get("PHOTOS_DIR", cls.photos_dir)),
+            memory_enabled=_bool(e.get("MEMORY_ENABLED"), cls.memory_enabled),
+            memory_dir=Path(e.get("MEMORY_DIR", cls.memory_dir)),
+            memory_seed=Path(e.get("MEMORY_SEED", cls.memory_seed)),
             http_host=e.get("HTTP_HOST", cls.http_host),
             http_port=int(e.get("HTTP_PORT", cls.http_port)),
             https_port=int(e.get("HTTPS_PORT", cls.https_port)),
