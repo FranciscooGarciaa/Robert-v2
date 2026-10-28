@@ -43,6 +43,7 @@ class VoiceService:
         self.backend = Backend(s.backend_url)
         self.beep = assets.beep()
         self.no_network = assets.phrase("no_network", s.assets_dir, s.piper_voice)
+        self.no_credit = assets.phrase("no_credit", s.assets_dir, s.piper_voice)
         self.greet = threading.Event()  # interrupts the wake word: social greeting or phone talk
         self.opening: str | None = None
         self.in_conversation = threading.Event()
@@ -97,7 +98,8 @@ class VoiceService:
             await talk.run()
         except Exception as exc:  # noqa: BLE001 - network/API: say so, back to the wake word
             log.warning("conversation failed: %r", exc)
-            self.player.write(self.no_network)
+            # An empty Gemini balance looks like any other API error: say which one it is.
+            self.player.write(self.no_credit if "credits are depleted" in str(exc) else self.no_network)
             await asyncio.sleep(self.player.remaining_s())
 
     def run(self) -> None:
