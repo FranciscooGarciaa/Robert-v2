@@ -599,7 +599,8 @@ drives, explores and follows normally; the voice answers with a local Piper phra
 
 ### Build your own
 
-Everything personal lives in git-ignored files that you create from an example:
+The printable parts are in [`cad/`](cad/README.md): a Bambu Studio project with all 16 plates
+laid out for an A1 mini, in PLA. Everything personal lives in git-ignored files that you create from an example:
 
 | File | From | What you put in it |
 |---|---|---|
@@ -706,6 +707,7 @@ ros/                     ROS 2 LaserScan bridge
 tools/                   Calibration, bench and recording tools run from the laptop
 docs/lidar-y-ros.md      LiDAR fundamentals and ROS 2 practice (Spanish)
 docs/memoria.md          Memory format and API (Spanish)
+cad/                     Printable parts: Bambu Studio project, 16 plates (Spanish guide)
 ```
 
 Git-ignored on purpose: `firmware/robert_motor/secrets.h`, `pi/.env`, `pi/scripts/local.env`,
@@ -746,4 +748,5 @@ push-to-talk). 2026-10-28: memory across sessions. 2026-10-29: the voice's AI is
 and build your own rover with it for any **noncommercial** purpose (personal projects, hobby,
 education, research). Making money with it (selling robots, kits or a product or service built
 on this code) is not allowed. For a commercial use, ask the author for a separate license.
+The printable parts in `cad/` are under [CC BY-NC 4.0](cad/LICENSE.md), also noncommercial.
 Third-party libraries and models it installs keep their own licenses.
