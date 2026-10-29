@@ -1,282 +1,294 @@
-# Robert V2 — a four-wheeled rover that follows you, sees, talks and remembers
+# Robert V2: un rover de cuatro ruedas que te sigue, ve, habla y recuerda
 
-Robert V2 is a home-built differential-drive rover with a layered control architecture:
-a real-time **ESP32 motor and safety controller**, a **Raspberry Pi** that runs perception,
-navigation, voice and a web control panel, and a **progressive web app (PWA)** used as the
-remote control from a phone. It can be driven by hand, explore a room on its own using a 2D
-LiDAR, follow a person using the camera and the LiDAR together, hold a spoken conversation
-through a live speech-to-speech AI (Gemini Live or OpenAI Realtime, your choice), take photos, greet strangers, and keep a memory of what it experiences
-from one session to the next.
+Robert V2 es un rover de tracción diferencial hecho en casa, con una arquitectura de control por
+capas: un **ESP32 que controla los motores y la seguridad en tiempo real**, una **Raspberry Pi**
+que se encarga de la percepción, la navegación, la voz y un panel de control web, y una
+**aplicación web progresiva (PWA)** que hace de mando a distancia desde el móvil. Se puede
+conducir a mano, explora una habitación solo con un LiDAR 2D, sigue a una persona combinando la
+cámara y el LiDAR, mantiene conversaciones habladas con una IA de voz en directo (Gemini Live u
+OpenAI Realtime, a tu elección), hace fotos, saluda a desconocidos y guarda memoria de lo que vive
+de una sesión a otra.
 
-This document is the technical guide to the project: what is being built, why it is built
-this way, what it depends on, how every subsystem works, and how to build, calibrate, test
-and run it. The user-facing side of the robot (the PWA and Robert's speech) is in Spanish;
-the code and this guide are in English.
+Este documento es la guía técnica del proyecto: qué se construye, por qué de esta manera, de qué
+depende, cómo funciona cada subsistema y cómo montarlo, calibrarlo, probarlo y ponerlo en marcha.
+La guía y todo lo que ve el usuario (la PWA y la voz de Robert) están en español; el código y sus
+comentarios, en inglés.
 
-- Predecessor: [Robert V1](https://github.com/FranciscooGarciaa/Robert) was built on a
-  Freenove tank kit whose vendor server had no watchdog. V2 replaces that stack with its own
-  hardware and software from the motor driver up. Project page: <https://franslab.es/projects/robert>.
-- Status (2026-10-28): all subsystems below are implemented, tested in the house and taken
-  out on the street. See [Project status](#project-status-and-known-limitations).
+- Predecesor: [Robert V1](https://github.com/FranciscooGarciaa/Robert), montado sobre un kit de
+  orugas Freenove cuyo servidor de fábrica no tenía watchdog. V2 sustituye todo eso por hardware y
+  software propios, desde el driver de motores hacia arriba. Página del proyecto:
+  <https://franslab.es/projects/robert-v2>.
+- Estado (2026-10-29): todos los subsistemas de abajo están implementados, probados en casa y en
+  la calle. Ver [Estado del proyecto](#estado-del-proyecto-y-limitaciones-conocidas).
+- Montaje: el cableado paso a paso está en [`docs/guia-montaje.md`](docs/guia-montaje.md) y las
+  piezas para imprimir en [`cad/`](cad/README.md).
 
-## Contents
+## Contenido
 
-1. [What we are building](#what-we-are-building)
-2. [System architecture](#system-architecture)
+1. [Qué estamos construyendo](#qué-estamos-construyendo)
+2. [Arquitectura del sistema](#arquitectura-del-sistema)
 3. [Hardware](#hardware)
-4. [Safety design](#safety-design)
-5. [ESP32 firmware](#esp32-firmware)
-6. [Raspberry Pi backend](#raspberry-pi-backend)
-7. [Perception](#perception)
-8. [Navigation](#navigation)
-9. [Voice](#voice)
-10. [Memory](#memory)
-11. [Web app (PWA)](#web-app-pwa)
-12. [Dependencies](#dependencies)
-13. [Build, setup and deployment](#build-setup-and-deployment)
-14. [Calibration](#calibration)
-15. [Testing](#testing)
-16. [Repository layout](#repository-layout)
-17. [Project status and known limitations](#project-status-and-known-limitations)
+4. [Diseño de seguridad](#diseño-de-seguridad)
+5. [Firmware del ESP32](#firmware-del-esp32)
+6. [Backend en la Raspberry Pi](#backend-en-la-raspberry-pi)
+7. [Percepción](#percepción)
+8. [Navegación](#navegación)
+9. [Voz](#voz)
+10. [Memoria](#memoria)
+11. [App web (PWA)](#app-web-pwa)
+12. [Dependencias](#dependencias)
+13. [Montaje, instalación y despliegue](#montaje-instalación-y-despliegue)
+14. [Calibración](#calibración)
+15. [Tests](#tests)
+16. [Estructura del repositorio](#estructura-del-repositorio)
+17. [Estado del proyecto y limitaciones conocidas](#estado-del-proyecto-y-limitaciones-conocidas)
+18. [Licencia](#licencia)
 
 ---
 
-## What we are building
+## Qué estamos construyendo
 
-**Goal.** A small robot that is safe to drive around people, works without a map or wheel
-encoders, and is pleasant to interact with: you can talk to it, ask it what it sees, ask it
-to follow you, and it remembers what happened on previous days.
+**Objetivo.** Un robot pequeño que sea seguro de conducir entre personas, que funcione sin mapa
+ni encoders en las ruedas y con el que sea agradable interactuar: puedes hablarle, preguntarle qué
+ve, pedirle que te siga, y se acuerda de lo que pasó otros días.
 
-**Capabilities.**
+**Capacidades.**
 
-| Capability | How | Where |
+| Capacidad | Cómo | Dónde |
 |---|---|---|
-| Manual driving from a phone | Press-and-hold pad in the PWA over a WebSocket, dead-man style | `frontend/`, `pi/robert/api/ws.py` |
-| Collision guard on every command | LiDAR scan swept along the commanded path; speed scaled down, blocked only in the dangerous direction | `pi/robert/nav/guard.py` |
-| Explore a room autonomously | Reactive local planner over a fan of arcs, corridor-based goal selection with hysteresis | `pi/robert/nav/explore.py`, `planner.py`, `autonomy.py` |
-| Follow a person | Camera (YOLO11n) proposes a direction, LiDAR cluster tracking (alpha-beta filter) locks on and follows at 0.6 m | `pi/robert/nav/follow.py`, `pi/robert/vision/` |
-| Spoken conversation | Local wake word, then a streaming Gemini Live or OpenAI Realtime session with function calling | `pi/robert/voice/` |
-| Look through the camera, take selfies | Camera frames sent to the model; full-resolution stills served by the PWA | `pi/robert/vision/service.py` |
-| Social mode | Greets someone who stops in front of it for 2 s (LiDAR proposes, camera confirms) | `pi/robert/nav/social.py` |
-| Dances and short voice-commanded moves | Fixed, bounded choreographies and 1 s nudges, all through the same guarded motion path | `pi/robert/robot/dance.py`, `nudge.py` |
-| Memory across sessions | Per-session JSONL diary plus a carried-over summary, injected into the voice prompt | `pi/robert/memory.py`, `docs/memoria.md` |
-| ROS 2 interoperability | Bridge node publishing the LiDAR as `sensor_msgs/LaserScan` | `ros/robert_laser_bridge.py`, `docs/lidar-y-ros.md` |
+| Conducción manual desde el móvil | Cruceta de mantener pulsado en la PWA por WebSocket, estilo hombre muerto | `frontend/`, `pi/robert/api/ws.py` |
+| Guardián de colisiones en cada orden | El escaneo del LiDAR se barre a lo largo del camino ordenado; la velocidad se reduce y sólo se bloquea la dirección peligrosa | `pi/robert/nav/guard.py` |
+| Explorar una habitación solo | Planificador local reactivo sobre un abanico de arcos, elección de objetivo por pasillos con histéresis | `pi/robert/nav/explore.py`, `planner.py`, `autonomy.py` |
+| Seguir a una persona | La cámara (YOLO11n) propone una dirección y el seguimiento de clústeres del LiDAR (filtro alfa-beta) la fija y la sigue a 0,6 m | `pi/robert/nav/follow.py`, `pi/robert/vision/` |
+| Conversación hablada | Palabra de activación en local y después una sesión en directo con Gemini Live u OpenAI Realtime, con llamadas a funciones | `pi/robert/voice/` |
+| Mirar por la cámara y hacerse selfies | Fotos de la cámara enviadas al modelo; fotos a resolución completa servidas por la PWA | `pi/robert/vision/service.py` |
+| Modo social | Saluda a quien se para delante 2 s (el LiDAR lo propone, la cámara lo confirma) | `pi/robert/nav/social.py` |
+| Bailes y movimientos cortos por voz | Coreografías fijas y acotadas y empujones de 1 s, todo por el mismo camino de movimiento vigilado | `pi/robert/robot/dance.py`, `nudge.py` |
+| Memoria entre sesiones | Un diario JSONL por sesión y un resumen que pasa de una a otra, inyectado en el prompt de la voz | `pi/robert/memory.py`, `docs/memoria.md` |
+| Compatibilidad con ROS 2 | Nodo puente que publica el LiDAR como `sensor_msgs/LaserScan` | `ros/robert_laser_bridge.py`, `docs/lidar-y-ros.md` |
 
-**Design principles.**
+**Principios de diseño.**
 
-1. **Fail toward STOP.** Every layer treats loss of its input as a stop: the ESP32 watchdog,
-   the Pi dead-man, the PWA's own release handling. Nothing persists a motor command.
-2. **One owner per resource.** Only the ESP32 touches the motor driver. Only the Pi backend
-   decides target speeds (the "motion arbiter"). Only the vision service opens the camera. Only
-   the backend opens the LiDAR serial port.
-3. **Reactive, not map-based.** There are no encoders and no map. Everything the robot decides is
-   computed from the latest LiDAR revolution, which makes the behaviour simple to reason about and
-   to test with recorded scans.
-4. **Voice is a client, not a controller.** The voice process can only ask the backend for bounded
-   actions (a 1 s nudge, a dance, follow); it can never start exploration, and every action still
-   passes through the dead-man, the guard and the ESP32 safety layer.
+1. **Ante la duda, STOP.** Cada capa trata la pérdida de su entrada como una parada: el watchdog
+   del ESP32, el hombre muerto de la Pi, la gestión de soltar el botón de la PWA. Ninguna orden de
+   motor se queda puesta.
+2. **Un único dueño por recurso.** Sólo el ESP32 toca el driver de motores. Sólo el backend de la
+   Pi decide las velocidades objetivo (el "árbitro de movimiento"). Sólo el servicio de visión abre
+   la cámara. Sólo el backend abre el puerto serie del LiDAR.
+3. **Reactivo, sin mapa.** No hay encoders ni mapa. Todo lo que decide el robot sale de la última
+   vuelta del LiDAR, lo que hace que su comportamiento sea fácil de razonar y de probar con
+   escaneos grabados.
+4. **La voz es un cliente, no un controlador.** El proceso de voz sólo puede pedir al backend
+   acciones acotadas (un empujón de 1 s, un baile, seguirte); nunca puede activar la exploración, y
+   toda acción sigue pasando por el hombre muerto, el guardián y la capa de seguridad del ESP32.
 
 ---
 
-## System architecture
+## Arquitectura del sistema
 
 ```mermaid
 flowchart LR
-    subgraph Phone["Phone / laptop"]
-        PWA["PWA (frontend/)<br/>drive pad, radar, buttons,<br/>push-to-talk, photos"]
+    subgraph Phone["Móvil / portátil"]
+        PWA["PWA (frontend/)<br/>cruceta, radar, botones,<br/>pulsar para hablar, fotos"]
     end
 
     subgraph Pi["Raspberry Pi 4 (pi/)"]
-        B["robert.service<br/>FastAPI backend :8000 / :8443<br/>motion arbiter, guard, autonomy,<br/>LiDAR reader, memory"]
-        V["robert-voice.service<br/>wake word, live AI,<br/>speaker, :8001 :8003"]
-        C["robert-vision.service<br/>camera owner, YOLO11n :8002"]
-        L["WitMotion D6 LiDAR<br/>USB serial 230400"]
-        M["ReSpeaker 2-Mics HAT<br/>mic + speaker"]
-        K["OV5647 camera"]
+        B["robert.service<br/>backend FastAPI :8000 / :8443<br/>árbitro de movimiento, guardián,<br/>autonomía, lector LiDAR, memoria"]
+        V["robert-voice.service<br/>palabra de activación, IA en directo,<br/>altavoz, :8001 :8003"]
+        C["robert-vision.service<br/>dueño de la cámara, YOLO11n :8002"]
+        L["LiDAR WitMotion D6<br/>serie USB 230400"]
+        M["ReSpeaker 2-Mics HAT<br/>micro + altavoz"]
+        K["Cámara OV5647"]
     end
 
     subgraph ESP["ESP32 (firmware/)"]
-        F["robert_motor.ino<br/>watchdog 500 ms, ramp,<br/>ultrasonic veto, OTA"]
-        U["HC-SR04 ultrasonic"]
+        F["robert_motor.ino<br/>watchdog 500 ms, rampa,<br/>veto ultrasónico, OTA"]
+        U["Ultrasonido HC-SR04"]
     end
 
-    D["Cytron MDD10A<br/>dual H-bridge"] --> W["4 DC gear motors<br/>(2 per side)"]
+    D["Cytron MDD10A<br/>doble puente H"] --> W["4 motores DC con reductora<br/>(2 por lado)"]
 
     PWA <-- "WebSocket /ws (10 Hz)<br/>HTTP /api" --> B
     PWA -- "/ws/talk (PCM16)" --> B --> V
-    V <-- "localhost HTTP" --> B
-    C <-- "localhost HTTP" --> B
+    V <-- "HTTP localhost" --> B
+    C <-- "HTTP localhost" --> B
     V -- "/photo.jpg" --> C
     L --> B
     K --> C
     M <--> V
-    B <-- "WebSocket :81, JSON v1<br/>move 10 Hz / telemetry 5 Hz" --> F
+    B <-- "WebSocket :81, JSON v1<br/>move 10 Hz / telemetría 5 Hz" --> F
     U --> F
     F -- "PWM 20 kHz + DIR" --> D
 ```
 
-**Three processes on the Pi, one on the ESP32.** The backend is the only process with
-real-time duties on the Pi (a 10 Hz navigation loop and a 10 Hz sender to the ESP32), so audio
-and network latency from the voice and vision services can never delay a stop. The voice and
-vision services talk to the backend only over localhost HTTP, and the backend refuses those
-routes from any other host.
+**Tres procesos en la Pi y uno en el ESP32.** El backend es el único proceso de la Pi con tareas
+de tiempo real (un bucle de navegación a 10 Hz y un emisor a 10 Hz hacia el ESP32), así que la
+latencia del audio y de la red de los servicios de voz y visión nunca puede retrasar una parada.
+Los servicios de voz y visión sólo hablan con el backend por HTTP en localhost, y el backend
+rechaza esas rutas desde cualquier otra máquina.
 
-**Control path of a single drive command** (manual driving):
+**Recorrido de una orden de conducción** (conducción manual):
 
 ```mermaid
 sequenceDiagram
     participant P as PWA
-    participant B as Pi backend
-    participant G as Collision guard
+    participant B as Backend de la Pi
+    participant G as Guardián de colisiones
     participant E as ESP32
     participant D as MDD10A
-    P->>B: {"type":"drive","left":100,"right":100} every 100 ms
-    B->>B: MotionController.drive() (clamp to MAX_SPEED, record owner)
-    loop every 100 ms (ESP32 sender)
-        B->>G: current_target() → limit(left,right) against latest scan
-        G-->>B: (80, 80) scaled, or (0,0) if blocked
+    P->>B: {"type":"drive","left":100,"right":100} cada 100 ms
+    B->>B: MotionController.drive() (recorta a MAX_SPEED, anota el dueño)
+    loop cada 100 ms (emisor al ESP32)
+        B->>G: current_target() → limit(left,right) contra el último escaneo
+        G-->>B: (80, 80) reducida, o (0,0) si está bloqueado
         B->>E: {"type":"move","left":80,"right":80}
-        E->>E: safety::update(): watchdog, ultrasonic veto, ramp
+        E->>E: safety::update(): watchdog, veto ultrasónico, rampa
         E->>D: PWM/DIR
-        E-->>B: telemetry (5 Hz)
+        E-->>B: telemetría (5 Hz)
     end
-    Note over P,B: release / tab closed / 300 ms silence → stop
-    Note over B,E: 500 ms without a valid command → ESP32 STOP
+    Note over P,B: soltar / pestaña cerrada / 300 ms de silencio → stop
+    Note over B,E: 500 ms sin una orden válida → STOP en el ESP32
 ```
 
 ---
 
 ## Hardware
 
-### Bill of materials
+La lista completa de componentes, con cantidades y herramientas, y el esquema eléctrico paso a
+paso están en [`docs/guia-montaje.md`](docs/guia-montaje.md).
 
-| Part | Role | Notes |
+### Lista de materiales
+
+| Pieza | Función | Notas |
 |---|---|---|
-| Raspberry Pi 4 (1 GB) | Perception, navigation, voice, web server | Raspberry Pi OS (Debian 13, 64-bit), headless; boots to console to free RAM |
-| ESP32 (WROOM dev board) | Real-time motor and safety controller | Arduino core 3.x; mDNS `robert-motor.local`; OTA on port 3232 |
-| Cytron MDD10A | Dual 10 A H-bridge motor driver | Two channels; each drives the two motors of one side in parallel; PWM up to 20 kHz |
-| 4 × DC gear motors + wheels | Skid-steer base | Footprint 325 × 160 mm (measured 2026-10-22) |
-| WitMotion D6 (Guoke COIN-D6) | 360° 2D LiDAR | dTOF, ~10 rev/s, ~400 points/rev, 230400 8N1 over a CH340 USB adapter |
-| HC-SR04 | Forward ultrasonic range | Local obstacle veto on the ESP32; echo through a 1k/2k divider |
-| OV5647 camera module | Front camera | 640 × 480 @ 6 fps stream, 2592 × 1944 stills; ~54° horizontal FOV |
-| ReSpeaker 2-Mics Pi HAT v2.0 | Microphones and audio output | TLV320AIC3104 codec; speaker through a small PAM class-D amplifier powered from the battery |
-| LiPo battery with XT60 connector | Power | The XT60 is the physical emergency cut; software STOP is logical only |
-| iPhone hotspot (2.4 GHz) | Network on the street | Pi, ESP32 and phone on the same network; at home a normal Wi-Fi |
+| Raspberry Pi 4 (1 GB) | Percepción, navegación, voz, servidor web | Raspberry Pi OS (Debian 13, 64 bits), sin pantalla; arranca a consola para liberar RAM |
+| ESP32 (placa de desarrollo WROOM) | Controlador de motores y seguridad en tiempo real | Núcleo Arduino 3.x; mDNS `robert-motor.local`; OTA en el puerto 3232 |
+| Cytron MDD10A | Driver doble de motores de 10 A | Dos canales; cada uno mueve en paralelo los dos motores de un lado; PWM hasta 20 kHz |
+| 4 × motores DC con reductora + ruedas | Base de tracción diferencial (skid-steer) | Huella de 325 × 160 mm (medida el 2026-10-22) |
+| WitMotion D6 (Guoke COIN-D6) | LiDAR 2D de 360° | dTOF, ~10 vueltas/s, ~400 puntos/vuelta, 230400 8N1 por un adaptador USB CH340 |
+| HC-SR04 | Distancia frontal por ultrasonido | Veto de obstáculos local en el ESP32; eco por un divisor 1k/2k |
+| Módulo de cámara OV5647 | Cámara frontal | Vídeo 640 × 480 a 6 fps, fotos de 2592 × 1944; ~54° de campo horizontal |
+| ReSpeaker 2-Mics Pi HAT v2.0 | Micrófonos y salida de audio | Códec TLV320AIC3104; altavoces por un pequeño amplificador PAM de clase D alimentado desde la batería |
+| Batería LiPo con conector XT60 | Energía | El XT60 es el corte de emergencia físico; el STOP por software es sólo lógico |
+| Hotspot del móvil (2,4 GHz) | Red en la calle | Pi, ESP32 y móvil en la misma red; en casa, una Wi-Fi normal |
 
-### ESP32 pin map (validated on the bench, do not change without measuring)
+### Pines del ESP32 (validados en el banco; no los cambies sin medir)
 
-| ESP32 GPIO | Connection |
+| GPIO del ESP32 | Conexión |
 |---|---|
-| 25 | MDD10A PWM1 (M1 = right wheels) |
+| 25 | MDD10A PWM1 (M1 = ruedas derechas) |
 | 26 | MDD10A DIR1 |
-| 27 | MDD10A PWM2 (M2 = left wheels) |
+| 27 | MDD10A PWM2 (M2 = ruedas izquierdas) |
 | 33 | MDD10A DIR2 |
 | 32 | HC-SR04 TRIG |
-| 35 | HC-SR04 ECHO **through a 1k/2k divider** (5 V → 3.3 V; input-only pin) |
+| 35 | HC-SR04 ECHO **por un divisor 1k/2k** (5 V → 3,3 V; pin sólo de entrada) |
 
-**Robot frame.** The front of the robot is the side with the HC-SR04, so the ultrasonic veto
-guards the direction of travel. Seen from the front, M2 is the left side and M1 the right side,
-and "forward" is DIR LOW on both channels (validated 2026-10-22; the original hand-off described
-the robot from the other end). All of this lives in `firmware/robert_motor/config.h`. Navigation
-uses the ROS REP 103 convention: x forward, y left, angles counter-clockwise, metres and radians.
-LiDAR bins are published clockwise from the front and converted in `nav/scan.py`.
+**Referencia del robot.** El frontal del robot es el lado del HC-SR04, así que el veto
+ultrasónico vigila la dirección de avance. Visto desde delante, M2 es el lado izquierdo y M1 el
+derecho, y "adelante" es DIR LOW en los dos canales (validado el 2026-10-22; la documentación
+original describía el robot desde el otro extremo). Todo esto vive en
+`firmware/robert_motor/config.h`. La navegación usa la convención ROS REP 103: x hacia delante,
+y hacia la izquierda, ángulos en sentido antihorario, metros y radianes. Las celdas del LiDAR se
+publican en sentido horario desde el frontal y se convierten en `nav/scan.py`.
 
-### Motion model (no encoders)
+### Modelo de movimiento (sin encoders)
 
-Speeds are open-loop estimates from PWM, calibrated against the LiDAR used as a measuring tape
-(`tools/calibrate_motion.py`, 2026-10-24):
+Las velocidades son estimaciones en lazo abierto a partir del PWM, calibradas usando el LiDAR
+como cinta métrica (`tools/calibrate_motion.py`, 2026-10-24):
 
-| Parameter | Value | Meaning |
+| Parámetro | Valor | Significado |
 |---|---|---|
-| `MPS_PER_PWM` | 0.00475 m/s per PWM unit | PWM 100 ≈ 0.48 m/s, PWM 200 ≈ 0.95 m/s |
-| `TRACK_EFF_M` | 0.848 m | Effective skid-steer track width (65°/s spin at PWM 100) |
-| `PWM_DEADBAND` | 40 | Below this the wheels do not turn |
-| `ROBOT_MARGIN_M` | 0.10 m | Clearance kept around the body by the guard |
+| `MPS_PER_PWM` | 0,00475 m/s por unidad de PWM | PWM 100 ≈ 0,48 m/s, PWM 200 ≈ 0,95 m/s |
+| `TRACK_EFF_M` | 0,848 m | Ancho de vía efectivo del skid-steer (65°/s girando sobre sí mismo a PWM 100) |
+| `PWM_DEADBAND` | 40 | Por debajo de esto las ruedas no giran |
+| `ROBOT_MARGIN_M` | 0,10 m | Margen que el guardián mantiene alrededor del cuerpo |
 
 ---
 
-## Safety design
+## Diseño de seguridad
 
-Safety is layered; each layer works even if everything above it is gone.
+La seguridad va por capas; cada una funciona aunque desaparezca todo lo que tiene por encima.
 
-| Layer | Where | Trigger | Action |
+| Capa | Dónde | Disparador | Acción |
 |---|---|---|---|
-| 1. Physical cut | XT60 connector | Human | Motors unpowered |
-| 2. ESP32 boot state | `motors::begin()` first in `setup()` | Power-on or reset | Outputs forced to STOP before Wi-Fi even starts; nothing moves until an authenticated controller sends a valid `move` |
-| 3. ESP32 watchdog | `safety::update()` | 500 ms without a valid command while moving | STOP, latched until a new `move` |
-| 4. ESP32 link loss | `net` callbacks | Controller socket closed, Wi-Fi lost, OTA started, a second controller takes over, malformed JSON from the controller | STOP, latched |
-| 5. Ultrasonic veto | `safety::update()` | Confirmed obstacle < 15 cm (median of 3, 5 cm hysteresis) and command has a net forward component | Forward blocked; reverse and turning in place remain allowed |
-| 6. Pi dead-man | `MotionController.current_target()` | 300 ms without the driver re-sending its command | STOP (`deadman`) |
-| 7. Pi collision guard | `CollisionGuard.limit()` | LiDAR path sweep finds the stop distance reached, or the LiDAR is stale (> 0.35 s) | Speed scaled to 0 in the dangerous direction; blind: manual capped at PWM 80, autonomy stopped |
-| 8. Driver release | `ws.py`, `app.js` | WebSocket closes, tab hidden, window blurred, button released, malformed message | STOP from the Pi side; the PWA also stops on `visibilitychange`, `blur` and `pagehide` |
+| 1. Corte físico | Conector XT60 | Una persona | Motores sin alimentación |
+| 2. Arranque del ESP32 | `motors::begin()`, lo primero de `setup()` | Encendido o reinicio | Salidas forzadas a STOP antes incluso de arrancar el Wi-Fi; nada se mueve hasta que un controlador autenticado manda un `move` válido |
+| 3. Watchdog del ESP32 | `safety::update()` | 500 ms sin una orden válida mientras se mueve | STOP, enclavado hasta un nuevo `move` |
+| 4. Pérdida de enlace en el ESP32 | Callbacks de `net` | Se cierra el socket del controlador, se pierde el Wi-Fi, empieza una OTA, otro controlador toma el mando, JSON mal formado del controlador | STOP, enclavado |
+| 5. Veto ultrasónico | `safety::update()` | Obstáculo confirmado a < 15 cm (mediana de 3, histéresis de 5 cm) y la orden tiene componente hacia delante | Avance bloqueado; marcha atrás y giro sobre sí mismo siguen permitidos |
+| 6. Hombre muerto en la Pi | `MotionController.current_target()` | 300 ms sin que quien conduce reenvíe su orden | STOP (`deadman`) |
+| 7. Guardián de colisiones en la Pi | `CollisionGuard.limit()` | El barrido del LiDAR alcanza la distancia de frenado, o el LiDAR está desactualizado (> 0,35 s) | Velocidad reducida a 0 en la dirección peligrosa; a ciegas: manual limitado a PWM 80, autonomía parada |
+| 8. Soltar el mando | `ws.py`, `app.js` | Se cierra el WebSocket, se oculta la pestaña, la ventana pierde el foco, se suelta el botón, mensaje mal formado | STOP desde la Pi; la PWA también para con `visibilitychange`, `blur` y `pagehide` |
 
-Additional rules: motor output is slew-limited on the ESP32 (0 → 255 in ~170 ms) so a wrong
-command cannot snap the robot; the Pi caps every manual command at `MAX_SPEED` (180) and
-autonomy at `AUTO_MAX_SPEED` (100); dances last at most 6 s and nudges 1 s; follow-me stops when
-the person is lost for 2 s (+4 s re-acquisition window), walks beyond 4.5 m, or after 10 minutes.
+Reglas adicionales: la salida a motores tiene la pendiente limitada en el ESP32 (de 0 a 255 en
+~170 ms), así que una orden equivocada no puede dar un tirón al robot; la Pi limita toda orden
+manual a `MAX_SPEED` (180) y la autonomía a `AUTO_MAX_SPEED` (100); los bailes duran como mucho
+6 s y los empujones 1 s; el seguimiento para si pierde a la persona 2 s (+4 s de margen para
+recuperarla), si se aleja más de 4,5 m o a los 10 minutos.
 
-**Failsafe states** reported by the ESP32 (`safety::Failsafe`): `none`, `boot`, `watchdog`,
-`disconnect`, `wifi_lost`, `handover`, `malformed`, `ota`, `obstacle` (the last one is not
-latched). Changes are pushed to the Pi as `event` messages and shown in the PWA.
+**Estados de failsafe** que informa el ESP32 (`safety::Failsafe`): `none`, `boot`, `watchdog`,
+`disconnect`, `wifi_lost`, `handover`, `malformed`, `ota`, `obstacle` (este último no se
+enclava). Los cambios se envían a la Pi como mensajes `event` y se muestran en la PWA.
 
-**Bench acceptance checklist** (wheels off the ground, run from the Mac with `tools/esp32_cli.py`):
+**Lista de comprobación en el banco** (ruedas en el aire, desde el ordenador con
+`tools/esp32_cli.py`):
 
-1. Boot: motors still, log `[BOOT] ready, motors STOPPED`.
-2. `bench`: all four wheels turn in the right direction for forward / backward / left / right.
-3. `watchdog`: stop within 500 ms with `[SAFE] watchdog -> STOP`.
-4. Kill the script or the Mac's Wi-Fi during `drive`: stop.
-5. Object closer than 15 cm: forward blocked; reverse and turn in place still work.
-6. `garbage`: random bytes never move anything.
-7. With the Pi: close the PWA tab while driving → stop; `systemctl stop robert` → ESP32 watchdog stop.
+1. Arranque: motores quietos, log `[BOOT] ready, motors STOPPED`.
+2. `bench`: las cuatro ruedas giran en el sentido correcto para adelante / atrás / izquierda / derecha.
+3. `watchdog`: para en menos de 500 ms con `[SAFE] watchdog -> STOP`.
+4. Matar el script o el Wi-Fi del ordenador durante `drive`: para.
+5. Un objeto a menos de 15 cm: avance bloqueado; marcha atrás y giro sobre sí mismo siguen funcionando.
+6. `garbage`: bytes aleatorios nunca mueven nada.
+7. Con la Pi: cerrar la pestaña de la PWA mientras conduces → para; `systemctl stop robert` → para por el watchdog del ESP32.
 
 ---
 
-## ESP32 firmware
+## Firmware del ESP32
 
-`firmware/robert_motor/` is an Arduino sketch split into single-purpose modules:
+`firmware/robert_motor/` es un sketch de Arduino dividido en módulos de una sola responsabilidad:
 
-| Module | Responsibility |
+| Módulo | Responsabilidad |
 |---|---|
-| `robert_motor.ino` | Boot order, message dispatch, 5 Hz telemetry |
-| `config.h` | Every constant: pins, PWM 20 kHz / 8-bit, ramp 15 units per 10 ms, watchdog 500 ms, ultrasonic thresholds, mDNS name, ports |
-| `motor_controller.*` | Output stage for the MDD10A: signed speeds −255..255, ramp, `emergencyStop()` bypassing the ramp; all polarity knowledge lives here |
-| `safety.*` | Owns the decision of what the motors may do: watchdog, latched failsafes, ultrasonic veto, event sink |
-| `ultrasonic.*` | Non-blocking HC-SR04: ping every 60 ms, echo timed by an interrupt, median of 3, hysteresis, timeout counter |
-| `net.*` | Multi-network Wi-Fi with reconnect, mDNS, WebSocket server on port 81, single authenticated controller, ArduinoOTA |
-| `protocol.*` | JSON parsing and building with ArduinoJson |
-| `secrets.h` | Wi-Fi networks and the shared `CONTROL_TOKEN` (git-ignored; copy from `secrets.example.h`) |
+| `robert_motor.ino` | Orden de arranque, reparto de mensajes, telemetría a 5 Hz |
+| `config.h` | Todas las constantes: pines, PWM 20 kHz / 8 bits, rampa de 15 unidades cada 10 ms, watchdog de 500 ms, umbrales del ultrasonido, nombre mDNS, puertos |
+| `motor_controller.*` | Etapa de salida al MDD10A: velocidades con signo −255..255, rampa, `emergencyStop()` saltándose la rampa; todo lo relativo a la polaridad vive aquí |
+| `safety.*` | Decide qué pueden hacer los motores: watchdog, failsafes enclavados, veto ultrasónico, eventos |
+| `ultrasonic.*` | HC-SR04 sin bloqueos: disparo cada 60 ms, eco cronometrado por interrupción, mediana de 3, histéresis, contador de timeouts |
+| `net.*` | Wi-Fi con varias redes y reconexión, mDNS, servidor WebSocket en el puerto 81, un único controlador autenticado, ArduinoOTA |
+| `protocol.*` | Lectura y construcción de JSON con ArduinoJson |
+| `secrets.h` | Redes Wi-Fi y el `CONTROL_TOKEN` compartido (fuera de git; copia `secrets.example.h`) |
 
-The main loop is cooperative and never blocks: `net::update → ultrasonic::update →
-safety::update → motors::update`, plus telemetry every 200 ms.
+El bucle principal es cooperativo y nunca se bloquea: `net::update → ultrasonic::update →
+safety::update → motors::update`, más la telemetría cada 200 ms.
 
-### Protocol v1 (JSON over WebSocket, Pi ↔ ESP32)
+### Protocolo v1 (JSON por WebSocket, Pi ↔ ESP32)
 
-| Direction | Message | Notes |
+| Sentido | Mensaje | Notas |
 |---|---|---|
-| Pi → ESP32 | `{"type":"hello","v":1,"token":"…"}` | Must be first. Wrong version or token → `error` and disconnect. A second valid controller replaces the first (`handover` failsafe). |
-| Pi → ESP32 | `{"type":"move","left":-255..255,"right":-255..255}` | Sent at 10 Hz; doubles as the heartbeat and clears latched failsafes |
-| Pi → ESP32 | `{"type":"stop"}` | Immediate stop, bypasses the ramp |
-| Pi → ESP32 | `{"type":"heartbeat"}` | Refreshes the watchdog without changing speed |
-| ESP32 → Pi | `{"type":"hello_ack","reset_reason":"poweron",…}` | Reset reason is logged; unexpected ones (`brownout`, `panic`, `wdt`) are warned about |
-| ESP32 → Pi | `{"type":"telemetry",…}` 5 Hz | Requested and actual L/R, failsafe, ultrasonic distance / obstacle / timeouts, Wi-Fi RSSI, uptime |
-| ESP32 → Pi | `{"type":"event","failsafe":"watchdog",…}` | On every safety state change |
-| ESP32 → Pi | `{"type":"error","error":"bad_token"}` | `bad_version`, `bad_token`, `not_controller`, parse errors |
+| Pi → ESP32 | `{"type":"hello","v":1,"token":"…"}` | Tiene que ser el primero. Versión o token incorrectos → `error` y desconexión. Un segundo controlador válido sustituye al primero (failsafe `handover`). |
+| Pi → ESP32 | `{"type":"move","left":-255..255,"right":-255..255}` | Se envía a 10 Hz; hace también de latido y libera los failsafes enclavados |
+| Pi → ESP32 | `{"type":"stop"}` | Parada inmediata, sin rampa |
+| Pi → ESP32 | `{"type":"heartbeat"}` | Refresca el watchdog sin cambiar la velocidad |
+| ESP32 → Pi | `{"type":"hello_ack","reset_reason":"poweron",…}` | Se registra el motivo del reinicio; los inesperados (`brownout`, `panic`, `wdt`) generan un aviso |
+| ESP32 → Pi | `{"type":"telemetry",…}` a 5 Hz | Velocidad pedida y real I/D, failsafe, distancia / obstáculo / timeouts del ultrasonido, RSSI del Wi-Fi, tiempo encendido |
+| ESP32 → Pi | `{"type":"event","failsafe":"watchdog",…}` | En cada cambio de estado de seguridad |
+| ESP32 → Pi | `{"type":"error","error":"bad_token"}` | `bad_version`, `bad_token`, `not_controller`, errores de lectura |
 
-Malformed input never refreshes the watchdog; from the controller it trips the `malformed`
-failsafe. Non-controller clients can only receive errors.
+Una entrada mal formada nunca refresca el watchdog; si viene del controlador, dispara el failsafe
+`malformed`. Los clientes que no son el controlador sólo pueden recibir errores.
 
-### Building and flashing
+### Compilar y flashear
 
 ```sh
 cp firmware/robert_motor/secrets.example.h firmware/robert_motor/secrets.h   # Wi-Fi + token
 arduino-cli lib install WebSockets ArduinoJson
 arduino-cli compile --fqbn esp32:esp32:esp32 firmware/robert_motor
-# USB flashing: LiPo DISCONNECTED, USB only
+# Flasheo por USB: LiPo DESCONECTADA, sólo USB
 arduino-cli upload  --fqbn esp32:esp32:esp32 -p /dev/cu.usbserial-0001 firmware/robert_motor
 arduino-cli monitor -p /dev/cu.usbserial-0001 -c baudrate=115200
 ```
 
-Over-the-air update (no USB; the motors stop for the duration, `ota` failsafe):
+Actualización por Wi-Fi (sin USB; los motores se paran mientras dura, failsafe `ota`):
 
 ```sh
 arduino-cli compile --fqbn esp32:esp32:esp32 --output-dir build firmware/robert_motor
@@ -286,469 +298,489 @@ python3 ~/Library/Arduino15/packages/esp32/hardware/esp32/3.3.12/tools/espota.py
 
 ---
 
-## Raspberry Pi backend
+## Backend en la Raspberry Pi
 
-`pi/robert/` is a Python package; `python -m robert.main` starts the backend (FastAPI on
-uvicorn). Configuration comes from environment variables with a minimal `.env` loader
-(`config.py`, every setting documented in `pi/.env.example`).
+`pi/robert/` es un paquete de Python; `python -m robert.main` arranca el backend (FastAPI sobre
+uvicorn). La configuración sale de variables de entorno con un lector mínimo de `.env`
+(`config.py`; cada ajuste está documentado en `pi/.env.example`).
 
-### Package layout
+### Estructura del paquete
 
 ```
 pi/robert/
-├── main.py            create_app(): wires everything, 10 Hz nav loop, lifespan (stop on shutdown)
-├── config.py          Settings dataclass (ESP32, LiDAR, model, guard, autonomy, follow, memory, HTTP)
-├── memory.py          session diary + carried-over summary (see Memory)
+├── main.py            create_app(): conecta todo, bucle de navegación a 10 Hz, ciclo de vida (stop al apagar)
+├── config.py          Settings (ESP32, LiDAR, modelo, guardián, autonomía, seguimiento, memoria, HTTP)
+├── memory.py          diario de sesión + resumen que pasa de una sesión a otra (ver Memoria)
 ├── api/
-│   ├── http.py        REST: state, stop, health, LiDAR scan, voice/vision/memory routes, photos
-│   └── ws.py          PWA WebSocket (/ws) and push-to-talk relay (/ws/talk)
+│   ├── http.py        REST: estado, stop, salud, escaneo del LiDAR, rutas de voz/visión/memoria, fotos
+│   └── ws.py          WebSocket de la PWA (/ws) y relé de pulsar para hablar (/ws/talk)
 ├── robot/
-│   ├── state.py       RobotState: the single shared, read-only-for-the-API runtime state
-│   ├── motion.py      MotionController: the motion arbiter (dead-man, clamps, guard hook)
-│   ├── esp32_client.py  WebSocket client to the ESP32: hello, 10 Hz sender, telemetry, reconnect
-│   ├── lidar.py       D6 serial reader thread → 360 one-degree bins
-│   ├── nudge.py       bounded 1 s moves requested by voice
-│   └── dance.py       fixed choreographies (≤ 6 s)
+│   ├── state.py       RobotState: el único estado compartido, de sólo lectura para la API
+│   ├── motion.py      MotionController: el árbitro de movimiento (hombre muerto, límites, guardián)
+│   ├── esp32_client.py  cliente WebSocket del ESP32: hello, emisor a 10 Hz, telemetría, reconexión
+│   ├── lidar.py       hilo lector serie del D6 → 360 celdas de un grado
+│   ├── nudge.py       movimientos acotados de 1 s pedidos por voz
+│   └── dance.py       coreografías fijas (≤ 6 s)
 ├── nav/
-│   ├── model.py       RobotModel: geometry and PWM ↔ velocity model
-│   ├── scan.py        latest revolution as robot-frame points; self-mask; blind directions
-│   ├── geometry.py    footprint sweeps along arcs and spins (numpy)
+│   ├── model.py       RobotModel: geometría y modelo PWM ↔ velocidad
+│   ├── scan.py        última vuelta como puntos en la referencia del robot; automáscara; direcciones ciegas
+│   ├── geometry.py    barridos de la huella a lo largo de arcos y giros (numpy)
 │   ├── guard.py       CollisionGuard
-│   ├── planner.py     ArcPlanner: fan of arcs, stop-in-time filter, reverse escape
-│   ├── explore.py     Explorer: corridor scoring with hysteresis
-│   ├── follow.py      Follower: clusters, camera matching, alpha-beta tracking
+│   ├── planner.py     ArcPlanner: abanico de arcos, filtro de frenar a tiempo, escape marcha atrás
+│   ├── explore.py     Explorer: puntuación de pasillos con histéresis
+│   ├── follow.py      Follower: clústeres, emparejado con la cámara, seguimiento alfa-beta
 │   ├── social.py      SocialGreeter
-│   ├── calib.py       LiDAR self-mask load/apply
-│   └── autonomy.py    Autonomy: explore (heartbeat-armed) and follow modes, driven at the scan rate
-├── vision/            camera.py (rpicam-vid YUV420 stream), detector.py (YOLO11n ONNX), service.py
-├── voice/             audio.py (ALSA I/O), listener.py (openWakeWord + webrtcvad), live.py (Gemini Live
-│                      session and tools), service.py (process), backend.py (localhost client), sfx.py, assets.py
-└── sim/fake_esp32.py  ESP32 simulator with the same safety semantics (tests and hardware-free runs)
+│   ├── calib.py       carga y aplicación de la automáscara del LiDAR
+│   └── autonomy.py    Autonomy: modos explorar (armado por latido) y seguir, al ritmo del escaneo
+├── vision/            camera.py (vídeo YUV420 de rpicam-vid), detector.py (YOLO11n ONNX), service.py
+├── voice/             audio.py (E/S ALSA), listener.py (openWakeWord + webrtcvad), live.py (conversación,
+│                      prompt y herramientas), providers/ (Gemini, OpenAI), service.py (proceso),
+│                      backend.py (cliente localhost), sfx.py, assets.py
+└── sim/fake_esp32.py  simulador del ESP32 con la misma semántica de seguridad (tests y pruebas sin hardware)
 ```
 
-### Processes and ports
+### Procesos y puertos
 
-| systemd unit | Entry point | Ports | Purpose |
+| Unidad systemd | Punto de entrada | Puertos | Para qué |
 |---|---|---|---|
-| `robert` | `robert.main` | 8000 HTTP, 8443 HTTPS (same app) | Backend and PWA |
-| `robert-voice` | `robert.voice.service` | 8001 (`POST /greet`), 8003 (raw PCM from the PWA) | Wake word, conversation, speaker |
-| `robert-vision` | `robert.vision.service` | 8002 (`/photo.jpg`, `/people_now`, `/photo/full`, `/detect/on` and `/detect/off`) | Camera owner and person detection |
+| `robert` | `robert.main` | 8000 HTTP, 8443 HTTPS (la misma app) | Backend y PWA |
+| `robert-voice` | `robert.voice.service` | 8001 (`POST /greet`), 8003 (PCM crudo desde la PWA) | Palabra de activación, conversación, altavoz |
+| `robert-vision` | `robert.vision.service` | 8002 (`/photo.jpg`, `/people_now`, `/photo/full`, `/detect/on` y `/detect/off`) | Dueño de la cámara y detección de personas |
 
-All three run as the normal user with `Restart=always`. Killing a process restarts it with the
-new code, which is how `deploy.sh` restarts without sudo.
+Los tres corren con el usuario normal y `Restart=always`. Matar un proceso lo reinicia con el
+código nuevo, que es como `deploy.sh` reinicia sin sudo.
 
-### The motion arbiter
+### El árbitro de movimiento
 
-`MotionController` is the only object that sets the target speeds sent to the ESP32. Every
-command, manual or autonomous, is dead-man style: the driver must keep re-sending it or the
-target falls back to zero after 300 ms. On each 10 Hz send tick, `current_target()` checks the
-dead-man, then hands the target to the guard, which may scale or zero it; what the guard returns
-is what the ESP32 receives (and what the PWA shows as "output L/R"). Every stop carries a reason
-(`deadman`, `pwa-3_stop`, `follow_lost`, `voice_stop`, `shutdown`…) that ends up in the state,
-the logs, the PWA and the memory.
+`MotionController` es el único objeto que fija las velocidades objetivo que se envían al ESP32.
+Toda orden, manual o autónoma, es de tipo hombre muerto: quien conduce tiene que seguir
+reenviándola o el objetivo vuelve a cero a los 300 ms. En cada envío a 10 Hz, `current_target()`
+comprueba el hombre muerto y después pasa el objetivo al guardián, que puede reducirlo o ponerlo a
+cero; lo que devuelve el guardián es lo que recibe el ESP32 (y lo que la PWA muestra como "salida
+I/D"). Cada parada lleva un motivo (`deadman`, `pwa-3_stop`, `follow_lost`, `voice_stop`,
+`shutdown`…) que acaba en el estado, en los logs, en la PWA y en la memoria.
 
-### HTTP and WebSocket API
+### API HTTP y WebSocket
 
-| Route | Description |
+| Ruta | Descripción |
 |---|---|
-| `GET /api/state` | Full `RobotState.snapshot()`: ESP32 telemetry, ultrasonic, motion, LiDAR stats, nav (guard state, clearances, path, follow, social), vision, voice, uptime |
-| `POST /api/stop` | Logical stop |
+| `GET /api/state` | `RobotState.snapshot()` completo: telemetría del ESP32, ultrasonido, movimiento, estadísticas del LiDAR, navegación (estado del guardián, espacio libre, camino, seguimiento, social), visión, voz, tiempo encendido |
+| `POST /api/stop` | Parada lógica |
 | `GET /api/health` | `{ok, esp32_connected}` |
-| `GET /api/lidar/scan` | Latest revolution: 360 bins in mm (0 = no return) |
-| `GET /api/photos`, `GET /api/photos/{name}` | Selfies taken by the vision service |
-| `GET /api/memory`, `/api/memory/session`, `/api/memory/recall` | Memory summary, current diary, prompt text |
-| `POST /api/voice/event`, `/api/voice/command`, `/api/vision/people`, `/api/memory/note`, `/api/memory/story`, `/api/memory/event` | **localhost only**: used by the voice and vision services |
-| `WS /ws` | PWA control: `drive`, `stop`, `auto` (explore, re-armed every 100 ms), `follow`, `social`; the Pi pushes `state` at 10 Hz and `scan` at 5 Hz |
-| `WS /ws/talk` | Push-to-talk: binary 16 kHz mono PCM16 frames relayed to the voice service |
+| `GET /api/lidar/scan` | Última vuelta: 360 celdas en mm (0 = sin eco) |
+| `GET /api/photos`, `GET /api/photos/{name}` | Selfies hechos por el servicio de visión |
+| `GET /api/memory`, `/api/memory/session`, `/api/memory/recall` | Resumen de la memoria, diario actual, texto para el prompt |
+| `POST /api/voice/event`, `/api/voice/command`, `/api/vision/people`, `/api/memory/note`, `/api/memory/story`, `/api/memory/event` | **Sólo localhost**: las usan los servicios de voz y visión |
+| `WS /ws` | Control desde la PWA: `drive`, `stop`, `auto` (explorar, rearmado cada 100 ms), `follow`, `social`; la Pi envía `state` a 10 Hz y `scan` a 5 Hz |
+| `WS /ws/talk` | Pulsar para hablar: tramas binarias PCM16 mono a 16 kHz que se pasan al servicio de voz |
 
 ---
 
-## Perception
+## Percepción
 
 ### LiDAR (WitMotion D6)
 
-The sensor streams as soon as it is powered. `robot/lidar.py` implements the classic
-serial-sensor pipeline: framing on the `AA 55` header, length from `LSN`, XOR checksum with
-resynchronisation, little-endian decoding (`angle = (raw >> 1) / 64` degrees,
-`distance_mm = (b2 << 6) | (b1 >> 2)`), linear interpolation of angles between FSA and LSA,
-grouping into revolutions on the start-of-revolution packet. A reader thread publishes each
-revolution as 360 one-degree bins in the robot frame (nearest return per bin), after applying
-the measured mounting offset (`LIDAR_OFFSET_DEG=272`) and rotation sense.
+El sensor emite datos en cuanto recibe corriente. `robot/lidar.py` implementa la cadena clásica de
+un sensor serie: tramas por la cabecera `AA 55`, longitud a partir de `LSN`, checksum XOR con
+resincronización, decodificación little-endian (`angle = (raw >> 1) / 64` grados,
+`distance_mm = (b2 << 6) | (b1 >> 2)`), interpolación lineal de los ángulos entre FSA y LSA, y
+agrupación en vueltas con el paquete de inicio de vuelta. Un hilo lector publica cada vuelta como
+360 celdas de un grado en la referencia del robot (el eco más cercano de cada celda), tras aplicar
+el desfase de montaje medido (`LIDAR_OFFSET_DEG=272`) y el sentido de giro.
 
-Parts of the robot are inside the LiDAR's view. `tools/calibrate_lidar.py` records those bins as
-a **self-mask** (`pi/lidar_mask.json`); masked returns are dropped and the planner never drives
-into a direction it cannot see (manual driving there is allowed, slowly). The LiDAR only sees in
-its plane: kerbs, steps down and low objects are left to the ultrasonic sensor.
+Partes del robot quedan dentro del campo de visión del LiDAR. `tools/calibrate_lidar.py` registra
+esas celdas como una **automáscara** (`pi/lidar_mask.json`); los ecos enmascarados se descartan y
+el planificador nunca conduce hacia una dirección que no puede ver (a mano sí se puede, despacio).
+El LiDAR sólo ve en su plano: bordillos, escalones hacia abajo y objetos bajos quedan para el
+ultrasonido.
 
-A detailed, teaching-oriented explanation of the sensor, the wire format and the ROS 2 bridge
-(Docker image `ros:jazzy-ros-base`, `/scan` as `sensor_msgs/LaserScan`) is in
+Una explicación detallada y didáctica del sensor, del formato de los datos y del puente con ROS 2
+(imagen Docker `ros:jazzy-ros-base`, `/scan` como `sensor_msgs/LaserScan`) está en
 [`docs/lidar-y-ros.md`](docs/lidar-y-ros.md).
 
-### Ultrasonic (HC-SR04)
+### Ultrasonido (HC-SR04)
 
-Read on the ESP32 every 60 ms with interrupt-timed echoes; obstacle below 15 cm, released above
-20 cm; readings are clamped to 2–400 cm and a missing echo counts as "clear" (the `us_timeouts`
-telemetry counter makes a disconnected sensor visible).
+Se lee en el ESP32 cada 60 ms, con el eco cronometrado por interrupción; hay obstáculo por debajo
+de 15 cm y se libera por encima de 20 cm; las lecturas se limitan a 2–400 cm y un eco que no llega
+cuenta como "libre" (el contador `us_timeouts` de la telemetría deja ver si el sensor se ha
+desconectado).
 
-### Camera and person detection
+### Cámara y detección de personas
 
-`vision/service.py` is the sole owner of the camera. It keeps a continuous 640 × 480, 6 fps
-YUV420 stream from `rpicam-vid`, so a photo for the voice is instant, and runs **YOLO11n**
-(ONNX, 320 × 320 letterbox, `onnxruntime` on the CPU, ~170 ms per frame on the Pi 4) only while
-the backend asks for it, during follow-me and for the one-shot social check. Detections are
-reported as bearings in the robot frame (`bearing_deg = −(cx/w − 0.5) · HFOV`, with a 54°
-horizontal field of view), which is all the navigation needs. Full-resolution stills
-(2592 × 1944) are taken with `rpicam-still` by pausing the stream for ~1.5 s.
-
----
-
-## Navigation
-
-All navigation runs in the backend's `nav_loop` at the scan rate (10 Hz, `TICK_S = 0.1`), and
-costs ~7 ms per cycle on the Pi 4. Every tick: refresh clearances for the PWA and voice, run one
-autonomy step, update social mode, and let the memory observe state changes.
-
-### Collision guard (`nav/guard.py`)
-
-The commanded `(left, right)` is converted to `(v, ω)` through the motion model and turned into a
-path: an arc of curvature `ω/v`, or a turn in place when the radius is below 0.10 m. The robot's
-footprint plus margin is swept along that path against the scan points (`geometry.py`). The
-free travel is compared with the **stop distance** `v · latency + v² / (2 · decel)` (latency
-0.25 s, deceleration 1 m/s²): the speed factor ramps linearly from 1 at `stop + 0.40 m` to 0 at
-`stop`. Only the dangerous command is refused: reversing or turning away is always possible.
-With no scan newer than 0.35 s the guard is "blind": manual driving is capped at PWM 80 (the
-ESP32 veto still applies) and autonomy stops.
-
-### Explore (`nav/explore.py`, `nav/planner.py`, `nav/autonomy.py`)
-
-Explore runs only while the operator keeps it armed (the PWA re-sends `auto` every 100 ms like a
-dead-man). Each tick the **Explorer** measures, for 36 bearings, how far a robot-wide corridor
-runs before hitting something (capped at 3 m), and scores corridors by length, little turning
-(0.6 m of corridor per π rad) and a bonus for staying near the previous choice (hysteresis,
-±25°), carrying the previous bearing over by subtracting the commanded rotation since there is
-no odometry. The **ArcPlanner** then sweeps 13 curvatures × 2 speeds plus two turns in place
-over a 2 m horizon, drops any arc that cannot stop in time, and picks the best trade-off of
-goal heading, clearance, speed and smoothness. When nothing forward fits and turning is blocked
-or has gone on for 2.5 s, it backs out along the freest of five reverse arcs and commits to it
-for ~0.8 s. Any STOP, manual drive, blind LiDAR or being stuck (> 8 s without progress) disarms it.
-
-### Follow me (`nav/follow.py`)
-
-Acquisition needs both sensors to agree: a LiDAR cluster of person width (0.03–0.8 m: a single leg
-at 3 m is only 2–3 points) within 3 m and ±25° of the front, in the same direction as a camera
-detection (±6° slack), for up to 3 s. From then on the LiDAR alone tracks the cluster at 10 Hz
-with an alpha-beta filter (α 0.6, β 0.2) and gated association (0.5 m, 0.7 m to re-acquire), so
-the person may leave the camera's narrow view. The controller keeps 0.6 m from the robot centre
-(stands still under 0.5 m), accelerates 1.2 m/s per metre of extra distance up to PWM 200
-(~0.95 m/s, a brisk walk), turns in place when the person is more than 35° round, and otherwise
-plans an arc with the same planner and guard as Explore. The followed person is the dead-man:
-losing them for 2 s (plus a 4 s re-acquisition window near the last position), 4.5 m of
-distance, or 10 minutes ends it with a stop reason the PWA and the voice can explain.
-
-### Social mode, nudges and dances
-
-**Social mode** (`nav/social.py`): with the robot idle, a person-sized cluster within 1.2 m and
-±30° in front for 2 s triggers one camera check; if the camera confirms, the voice service is
-asked to open a conversation with a greeting prompt. Cooldown 60 s, never while moving or
-talking. **Nudges** (`robot/nudge.py`) are the voice's "move forward / turn left": one drive
-command re-sent at 10 Hz for at most 1 s. **Dances** (`robot/dance.py`) are fixed step lists
-(`baile`, `vuelta`, `celebracion`, ≤ 6 s, spin at PWM 150 using the calibrated 65°/s per PWM 100).
-All of them go through `MotionController`, so the dead-man, the guard and the ESP32 still apply,
-and any stop or manual drive cancels them.
+`vision/service.py` es el único dueño de la cámara. Mantiene un vídeo YUV420 continuo de
+640 × 480 a 6 fps desde `rpicam-vid`, para que una foto para la voz sea instantánea, y ejecuta
+**YOLO11n** (ONNX, 320 × 320 con letterbox, `onnxruntime` en la CPU, ~170 ms por imagen en la
+Pi 4) sólo cuando el backend lo pide: durante el seguimiento y para la comprobación puntual del
+modo social. Las detecciones se dan como direcciones en la referencia del robot
+(`bearing_deg = −(cx/w − 0.5) · HFOV`, con un campo horizontal de 54°), que es todo lo que necesita
+la navegación. Las fotos a resolución completa (2592 × 1944) se hacen con `rpicam-still`,
+pausando el vídeo ~1,5 s.
 
 ---
 
-## Voice
+## Navegación
 
-The voice service is a separate process so that audio never touches motor control. The
-pipeline, measured on the Pi (2026-10-23):
+Toda la navegación corre en el `nav_loop` del backend al ritmo del escaneo (10 Hz,
+`TICK_S = 0.1`) y cuesta ~7 ms por ciclo en la Pi 4. En cada ciclo: actualiza el espacio libre
+para la PWA y la voz, ejecuta un paso de autonomía, actualiza el modo social y deja que la memoria
+observe los cambios de estado.
+
+### Guardián de colisiones (`nav/guard.py`)
+
+El `(left, right)` ordenado se convierte en `(v, ω)` con el modelo de movimiento y en un camino: un
+arco de curvatura `ω/v`, o un giro sobre sí mismo si el radio es menor de 0,10 m. La huella del
+robot más el margen se barre a lo largo de ese camino contra los puntos del escaneo
+(`geometry.py`). El recorrido libre se compara con la **distancia de frenado**
+`v · latencia + v² / (2 · decel)` (latencia de 0,25 s, deceleración de 1 m/s²): el factor de
+velocidad baja linealmente de 1 a `frenado + 0,40 m` hasta 0 a `frenado`. Sólo se rechaza la orden
+peligrosa: dar marcha atrás o girar para alejarse siempre es posible. Sin un escaneo de menos de
+0,35 s el guardián está "a ciegas": la conducción manual se limita a PWM 80 (el veto del ESP32
+sigue activo) y la autonomía se para.
+
+### Explorar (`nav/explore.py`, `nav/planner.py`, `nav/autonomy.py`)
+
+La exploración sólo funciona mientras el operador la mantiene armada (la PWA reenvía `auto` cada
+100 ms, como un hombre muerto). En cada ciclo, el **Explorer** mide, en 36 direcciones, hasta dónde
+llega un pasillo del ancho del robot antes de chocar con algo (con un máximo de 3 m), y puntúa los
+pasillos por longitud, por girar poco (0,6 m de pasillo por π rad) y con un extra por mantenerse
+cerca de la elección anterior (histéresis de ±25°), arrastrando la dirección anterior al restarle
+la rotación ordenada, porque no hay odometría. Después el **ArcPlanner** barre 13 curvaturas × 2
+velocidades más dos giros sobre sí mismo en un horizonte de 2 m, descarta los arcos en los que no
+podría frenar a tiempo y elige el mejor equilibrio entre rumbo al objetivo, espacio libre,
+velocidad y suavidad. Cuando no cabe nada hacia delante y el giro está bloqueado o dura ya 2,5 s,
+sale marcha atrás por el más libre de cinco arcos y lo mantiene ~0,8 s. Cualquier STOP,
+conducción manual, LiDAR a ciegas o quedarse atascado (> 8 s sin avanzar) la desarma.
+
+### Sígueme (`nav/follow.py`)
+
+Para engancharse a alguien tienen que coincidir los dos sensores: un clúster del LiDAR del ancho de
+una persona (0,03–0,8 m: una pierna a 3 m son sólo 2–3 puntos) a menos de 3 m y ±25° del frontal,
+en la misma dirección que una detección de la cámara (±6° de margen), durante un máximo de 3 s. A
+partir de ahí el LiDAR sigue el clúster por sí solo a 10 Hz con un filtro alfa-beta (α 0,6, β 0,2)
+y una asociación con ventana (0,5 m, 0,7 m para recuperarlo), así que la persona puede salirse del
+estrecho campo de la cámara. El controlador mantiene 0,6 m desde el centro del robot (se queda
+quieto por debajo de 0,5 m), acelera 1,2 m/s por cada metro de distancia de más hasta PWM 200
+(~0,95 m/s, paso ligero), gira sobre sí mismo cuando la persona está a más de 35° y, si no, planifica
+un arco con el mismo planificador y guardián que Explorar. La persona seguida es el hombre muerto:
+perderla 2 s (más 4 s para recuperarla cerca de su última posición), 4,5 m de distancia o 10
+minutos lo terminan, con un motivo de parada que la PWA y la voz pueden explicar.
+
+### Modo social, empujones y bailes
+
+**Modo social** (`nav/social.py`): con el robot parado, un clúster del tamaño de una persona a
+menos de 1,2 m y ±30° delante durante 2 s dispara una comprobación con la cámara; si la cámara lo
+confirma, se pide al servicio de voz que abra una conversación con un saludo. Espera de 60 s entre
+saludos, y nunca mientras se mueve o habla. Los **empujones** (`robot/nudge.py`) son el "avanza /
+gira a la izquierda" de la voz: una orden de conducción reenviada a 10 Hz durante 1 s como mucho.
+Los **bailes** (`robot/dance.py`) son listas fijas de pasos (`baile`, `vuelta`, `celebracion`,
+≤ 6 s, giros a PWM 150 usando los 65°/s calibrados por cada PWM 100). Todos pasan por
+`MotionController`, así que el hombre muerto, el guardián y el ESP32 siguen actuando, y cualquier
+parada o conducción manual los cancela.
+
+---
+
+## Voz
+
+El servicio de voz es un proceso aparte para que el audio nunca toque el control de los motores.
+La cadena, medida en la Pi (2026-10-23):
 
 ```mermaid
 flowchart LR
-    A["ReSpeaker mic<br/>arecord 16 kHz mono"] --> W["openWakeWord<br/>(ONNX, 80 ms frames)"]
-    W -- "wake word<br/>(or /greet, or push-to-talk)" --> S["Live AI session: Gemini or OpenAI<br/>(WebSocket, ~0.5 s to connect)"]
-    S -- "audio 24 kHz PCM16<br/>chunk by chunk" --> P["aplay → PAM amp → speaker"]
-    S -- "function calls" --> B["Backend /api/voice/command<br/>(bounded, guarded)"]
-    S -- "mirar / hacer_foto" --> C["Vision service"]
+    A["Micro del ReSpeaker<br/>arecord 16 kHz mono"] --> W["openWakeWord<br/>(ONNX, tramas de 80 ms)"]
+    W -- "palabra de activación<br/>(o /greet, o pulsar para hablar)" --> S["Sesión de IA en directo: Gemini u OpenAI<br/>(WebSocket, ~0,5 s en conectar)"]
+    S -- "audio PCM16 a 24 kHz<br/>trozo a trozo" --> P["aplay → amplificador PAM → altavoz"]
+    S -- "llamadas a funciones" --> B["Backend /api/voice/command<br/>(acotadas, vigiladas)"]
+    S -- "mirar / hacer_foto" --> C["Servicio de visión"]
     B -- "/api/memory/recall" --> S
 ```
 
-- **Wake word**: openWakeWord running on `onnxruntime` (the bundled `hey_jarvis` model by
-  default, `WAKE_MODEL` can point to a custom `.onnx`). Only this runs all the time.
-- **Provider**: `AI_PROVIDER` + `AI_API_KEY` in `pi/.env` pick the AI. `gemini` (Gemini Live,
-  `gemini-3.8-live`, voice `Puck`; the one measured below) or `openai` (OpenAI Realtime, the model
-  behind ChatGPT's voice: `gpt-realtime`, voice `marin`). Each is an adapter in
-  `voice/providers/` that maps its live session to the same small interface (send audio, receive
-  audio/transcripts/function calls, answer the calls); adding another provider means writing one
-  more adapter. The OpenAI adapter is covered by tests against a scripted socket but has not been
-  tried on the robot yet.
-- **Conversation**: one live session streams the
-  microphone; the server-side VAD ends each turn (600 ms of silence, low end-of-speech
-  sensitivity, chosen after 300 ms cut people off at their first pause). Replies arrive as 24 kHz
-  audio and are played as they stream: 0.6–0.8 s from the end of speech to the first audio.
-- **Half-duplex**: the ReSpeaker has no echo cancellation, so the microphone is muted while
-  Robert speaks and reopened 150 ms after playback ends. Local webrtcvad timestamps speech for
-  the 10 s idle timeout.
-- **Tools** (function calling; Robert's persona and tool descriptions are in `SYSTEM_PROMPT`,
-  `voice/live.py`):
+- **Palabra de activación**: openWakeWord sobre `onnxruntime` (por defecto el modelo incluido
+  `hey_jarvis`; `WAKE_MODEL` puede apuntar a un `.onnx` propio). Es lo único que corre todo el
+  tiempo.
+- **Proveedor**: `AI_PROVIDER` + `AI_API_KEY` en `pi/.env` eligen la IA. `gemini` (Gemini Live,
+  `gemini-3.8-live`, voz `Puck`; la que se ha medido abajo) u `openai` (OpenAI Realtime, el modelo
+  que hay detrás de la voz de ChatGPT: `gpt-realtime`, voz `marin`). Cada uno es un adaptador en
+  `voice/providers/` que traduce su sesión en directo a la misma interfaz pequeña (enviar audio,
+  recibir audio/transcripciones/llamadas a funciones, responder a las llamadas); añadir otro
+  proveedor consiste en escribir otro adaptador. El adaptador de OpenAI está cubierto por tests
+  contra un socket simulado, pero todavía no se ha probado en el robot.
+- **Conversación**: una sesión en directo transmite el micrófono; el VAD del servidor cierra cada
+  turno (600 ms de silencio, sensibilidad baja de fin de frase, elegida después de que 300 ms
+  cortaran a la gente en su primera pausa). Las respuestas llegan como audio a 24 kHz y se
+  reproducen según llegan: de 0,6 a 0,8 s desde que terminas de hablar hasta el primer sonido.
+- **Semidúplex**: el ReSpeaker no tiene cancelación de eco, así que el micrófono se silencia
+  mientras Robert habla y se reabre 150 ms después de terminar. Un webrtcvad local marca cuándo
+  se habla para el tiempo de inactividad de 10 s.
+- **Herramientas** (llamadas a funciones; la personalidad de Robert y la descripción de las
+  herramientas están en `SYSTEM_PROMPT`, `voice/live.py`):
 
-| Tool | Effect |
+| Herramienta | Qué hace |
 |---|---|
-| `parar` | Stop immediately |
-| `mover(direccion)` | 1 s nudge forward / backward / left / right |
-| `mirar` | Photo from the front camera attached to the tool response, so the model can describe what it sees |
-| `estado_robot` | Clearances around the robot (from the guard, never raw LiDAR) and whether it is moving |
-| `seguirme`, `dejar_de_seguir` | Start follow-me (waits up to 3 s to report whether a person was found) / stop |
-| `bailar(estilo)` | One of the three dances |
-| `hacer_foto` | Countdown beeps, full-resolution selfie, shutter sound; the photo appears in the PWA |
-| `modo_social(activar)` | Social mode on/off |
-| `recordar`, `apuntar(nota)` | Read the memory / save a note someone asked Robert to remember |
-| `despedirse` | End the conversation |
+| `parar` | Para inmediatamente |
+| `mover(direccion)` | Empujón de 1 s adelante / atrás / izquierda / derecha |
+| `mirar` | Foto de la cámara frontal adjunta a la respuesta, para que el modelo describa lo que ve |
+| `estado_robot` | Espacio libre alrededor (del guardián, nunca del LiDAR en crudo) y si se está moviendo |
+| `seguirme`, `dejar_de_seguir` | Empieza a seguir (espera hasta 3 s para decir si ha encontrado a alguien) / para |
+| `bailar(estilo)` | Uno de los tres bailes |
+| `hacer_foto` | Pitidos de cuenta atrás, selfie a resolución completa, sonido de obturador; la foto aparece en la PWA |
+| `modo_social(activar)` | Activa o desactiva el modo social |
+| `recordar`, `apuntar(nota)` | Lee la memoria / guarda una nota que le han pedido recordar |
+| `despedirse` | Termina la conversación |
 
-- **Other ways in**: `POST 127.0.0.1:8001/greet` (social mode) opens a conversation where Robert
-  speaks first; the PWA's push-to-talk streams the phone's microphone to port 8003 and replaces
-  the robot's mic for that conversation. iOS only exposes the microphone on a secure page, so
-  the PWA is also served over HTTPS on port 8443 with a self-signed CA (`tools/make_certs.sh`;
-  the CA certificate is installed and trusted on the phone once).
-- **Audio levels** (validated 2026-10-23/24, stored with `alsactl`): mic +27 dB with the high-pass
-  filter, which allows talking from 2–3 m; output 0 dB. PipeWire is masked because WirePlumber
-  reset the volume on every boot.
-
----
-
-## Memory
-
-Robert keeps a plain-JSON memory of what he experiences (`pi/robert/memory.py`,
-full description in [`docs/memoria.md`](docs/memoria.md)):
-
-- **Diary per session** (`~/robert-memory/sessions/<id>.jsonl`): one event per line. The backend
-  records what it is told (voice turns with what was heard and said, spoken commands, photos,
-  notes, greetings) and, by observing `RobotState` every tick, the transitions worth
-  remembering: ESP32 lost or reconnected, safety stops, follow start and why it ended, explore,
-  stuck, dances, conversation start and duration.
-- **Summary** (`memory.json`): totals, the last 30 sessions, **stories** in Robert's own voice
-  (the first ones, his first day on the street, are seeded from `pi/memory_seed.json`), notes
-  people asked him to keep, and his recent conversations.
-- **Recall**: at the start of every conversation the voice fetches a few bounded lines of Spanish
-  and appends them to the prompt, so Robert knows how many times he has been switched on, what
-  happened last session, his stories and notes. He can also be asked (`recordar`) and told
-  things to keep (`apuntar`).
-
-Writing never raises: with the SD card in read-only mode the memory lives in RAM like the
-photos, and `pi/scripts/pull_memory.sh` copies it to and from the laptop.
+- **Otras formas de empezar**: `POST 127.0.0.1:8001/greet` (modo social) abre una conversación en
+  la que Robert habla primero; el botón de pulsar para hablar de la PWA envía el micrófono del
+  móvil al puerto 8003 y sustituye al micro del robot durante esa conversación. iOS sólo deja usar
+  el micrófono en una página segura, así que la PWA también se sirve por HTTPS en el puerto 8443
+  con una CA propia (`tools/make_certs.sh`; el certificado de la CA se instala y se marca como de
+  confianza en el móvil una sola vez).
+- **Niveles de audio** (validados el 2026-10-23/24, guardados con `alsactl`): micro a +27 dB con el
+  filtro paso alto, lo que permite hablarle desde 2–3 m; salida a 0 dB. PipeWire está enmascarado
+  porque WirePlumber reiniciaba el volumen en cada arranque.
 
 ---
 
-## Web app (PWA)
+## Memoria
 
-`frontend/` is a dependency-free HTML/JS/CSS app served by the backend. It shows link status
-(Pi, ESP32, LiDAR), ultrasonic distance, motion mode and the guarded output, the current
-failsafe, a **radar** of the LiDAR with the guard's planned path and clearances, the follow-me
-state, the voice state with the last thing heard and said, and the photo gallery. Controls:
-press-and-hold direction pad (pointer and keyboard), speed slider (40–180), big STOP, Explore
-(armed only while the button is held active and re-sent every 100 ms), Follow me, Social mode,
-and push-to-talk. Drive messages are sent every 100 ms; releasing, hiding the tab, blurring the
-window or unloading the page sends a stop.
+Robert guarda en JSON plano una memoria de lo que vive (`pi/robert/memory.py`, descripción
+completa en [`docs/memoria.md`](docs/memoria.md)):
+
+- **Diario por sesión** (`~/robert-memory/sessions/<id>.jsonl`): un evento por línea. El backend
+  anota lo que le cuentan (turnos de voz con lo que oyó y dijo, órdenes habladas, fotos, notas,
+  saludos) y, observando `RobotState` en cada ciclo, los cambios que merece la pena recordar: ESP32
+  perdido o recuperado, paradas de seguridad, empezar a seguir a alguien y por qué terminó,
+  exploraciones, atascos, bailes, inicio y duración de las conversaciones.
+- **Resumen** (`memory.json`): totales, las últimas 30 sesiones, **vivencias** contadas por el
+  propio Robert (las primeras se siembran desde `pi/memory_seed.json`; en el repositorio hay un
+  ejemplo, `pi/memory_seed.example.json`), notas que le han pedido guardar y sus conversaciones
+  recientes.
+- **Recuerdo**: al empezar cada conversación, la voz pide unas pocas líneas en español y las añade
+  al prompt, así Robert sabe cuántas veces lo han encendido, qué pasó en la última sesión, sus
+  vivencias y sus notas. También se le puede preguntar (`recordar`) y pedirle que guarde cosas
+  (`apuntar`).
+
+Escribir nunca falla: con la SD en sólo lectura, la memoria vive en RAM como las fotos, y
+`pi/scripts/pull_memory.sh` la copia entre la Pi y el ordenador.
 
 ---
 
-## Dependencies
+## App web (PWA)
+
+`frontend/` es una app HTML/JS/CSS sin dependencias que sirve el propio backend. Muestra el estado
+de los enlaces (Pi, ESP32, LiDAR), la distancia del ultrasonido, el modo de movimiento y la salida
+ya vigilada, el failsafe actual, un **radar** del LiDAR con el camino previsto por el guardián y el
+espacio libre, el estado del seguimiento, el de la voz con lo último que oyó y dijo, y la galería
+de fotos. Controles: cruceta de mantener pulsado (ratón, táctil y teclado), regulador de velocidad
+(40–180), un STOP grande, Explorar (armado sólo mientras el botón está activo y reenviado cada
+100 ms), Sígueme, Modo social y pulsar para hablar. Las órdenes de conducción se envían cada
+100 ms; soltar, ocultar la pestaña, cambiar de ventana o cerrar la página manda un stop.
+
+---
+
+## Dependencias
 
 ### Raspberry Pi (Python 3.13, `pi/requirements*.txt`)
 
-| Package | Used for |
+| Paquete | Para qué |
 |---|---|
-| `fastapi`, `uvicorn`, `websockets` | HTTP/WebSocket API, PWA hosting, ESP32 client |
-| `pyserial` | LiDAR serial port |
-| `numpy` | Scan processing, footprint sweeps, planners, image conversion |
-| `google-genai` | Gemini Live session (voice, `AI_PROVIDER=gemini`) |
-| `websockets` | Also the OpenAI Realtime session (voice, `AI_PROVIDER=openai`), with no extra SDK |
-| `openwakeword` (installed `--no-deps`) + `onnxruntime`, `scikit-learn`, `scipy`, `tqdm`, `requests` | Wake word on the Pi's CPU (openwakeword pins `tflite-runtime`, which has no Python 3.13 aarch64 wheel, so it runs on `onnxruntime`) |
-| `webrtcvad-wheels` | Local voice activity detection |
-| `piper-tts` | Offline Spanish phrases (e.g. "no network") via the `es_ES-davefx-medium` voice |
-| `pillow` | JPEG encoding of camera frames |
+| `fastapi`, `uvicorn`, `websockets` | API HTTP/WebSocket, servir la PWA, cliente del ESP32 |
+| `pyserial` | Puerto serie del LiDAR |
+| `numpy` | Procesado del escaneo, barridos de la huella, planificadores, conversión de imágenes |
+| `google-genai` | Sesión de Gemini Live (voz, `AI_PROVIDER=gemini`) |
+| `websockets` | También la sesión de OpenAI Realtime (voz, `AI_PROVIDER=openai`), sin SDK extra |
+| `openwakeword` (instalado con `--no-deps`) + `onnxruntime`, `scikit-learn`, `scipy`, `tqdm`, `requests` | Palabra de activación en la CPU de la Pi (openwakeword exige `tflite-runtime`, que no tiene wheel para Python 3.13 en aarch64, así que corre sobre `onnxruntime`) |
+| `webrtcvad-wheels` | Detección de voz local |
+| `piper-tts` | Frases en español sin conexión (por ejemplo "no tengo conexión") con la voz `es_ES-davefx-medium` |
+| `pillow` | Codificación JPEG de las imágenes de la cámara |
 | `pytest`, `httpx` | Tests |
 
-System side: Raspberry Pi OS Lite 64-bit (Debian 13), `rpicam-apps` (`rpicam-vid`, `rpicam-still`),
-ALSA (`arecord`/`aplay`), the ReSpeaker v2 device-tree overlay built from
-`seeed-linux-dtoverlays`, `ov5647` overlay, NetworkManager (`nmcli`) for the hotspot profile,
-systemd units in `pi/deploy/`. Models on the Pi: `~/robert-models/vision/yolo11n-320.onnx`
-(exported on the Mac with `yolo export model=yolo11n.pt format=onnx imgsz=320`),
-`~/robert-models/piper/es_ES-davefx-medium.onnx`, the openWakeWord models.
+En el sistema: Raspberry Pi OS Lite de 64 bits (Debian 13), `rpicam-apps` (`rpicam-vid`,
+`rpicam-still`), ALSA (`arecord`/`aplay`), el overlay del ReSpeaker v2 compilado desde
+`seeed-linux-dtoverlays`, el overlay `ov5647`, NetworkManager (`nmcli`) para el perfil del hotspot
+y las unidades systemd de `pi/deploy/`. Modelos en la Pi: `~/robert-models/vision/yolo11n-320.onnx`
+(exportado en el ordenador con `yolo export model=yolo11n.pt format=onnx imgsz=320`),
+`~/robert-models/piper/es_ES-davefx-medium.onnx` y los modelos de openWakeWord.
 
 ### ESP32
 
-Arduino core for ESP32 3.x (`esp32:esp32:esp32`), libraries **WebSockets** (Links2004) and
-**ArduinoJson**, `arduino-cli` for building, `espota.py` for OTA.
+Núcleo Arduino para ESP32 3.x (`esp32:esp32:esp32`), librerías **WebSockets** (Links2004) y
+**ArduinoJson**, `arduino-cli` para compilar y `espota.py` para la OTA.
 
-### Development machine (macOS)
+### Ordenador de desarrollo (macOS)
 
-`arduino-cli`, Python 3 for the tools in `tools/`, `rsync`/`ssh` for deployment, optionally
-Docker for ROS 2 and `ultralytics` for exporting the YOLO model.
+`arduino-cli`, Python 3 para las herramientas de `tools/`, `rsync`/`ssh` para desplegar y,
+opcionalmente, Docker para ROS 2 y `ultralytics` para exportar el modelo YOLO.
 
-### Cloud
+### Nube
 
-Only one external service: the **AI for the voice**, Gemini or OpenAI, with your own API key
-(`AI_PROVIDER`, `AI_API_KEY` in `pi/.env`; an older `GEMINI_API_KEY` still works). Everything else
-(wake word, VAD, detection, navigation, memory) runs on the robot. Without network the robot
-drives, explores and follows normally; the voice answers with a local Piper phrase.
+Un único servicio externo: la **IA de la voz**, Gemini u OpenAI, con tu propia clave
+(`AI_PROVIDER`, `AI_API_KEY` en `pi/.env`; un `GEMINI_API_KEY` antiguo sigue funcionando). Todo lo
+demás (palabra de activación, VAD, detección, navegación, memoria) corre en el robot. Sin red, el
+robot se conduce, explora y sigue con normalidad; la voz responde con una frase local de Piper.
 
 ---
 
-## Build, setup and deployment
+## Montaje, instalación y despliegue
 
-### Build your own
+### Construye el tuyo
 
-The printable parts are in [`cad/`](cad/README.md): a Bambu Studio project with all 16 plates
-laid out for an A1 mini, in PLA. The wiring, step by step, with power, pinout and failsafe, is in
-[`docs/guia-montaje.md`](docs/guia-montaje.md) (Spanish). Everything personal lives in git-ignored files that you create from an example:
+Las piezas para imprimir están en [`cad/`](cad/README.md): un proyecto de Bambu Studio con las 16
+placas preparadas para una A1 mini, en PLA. El cableado paso a paso, con la alimentación, los
+pines y el failsafe, está en [`docs/guia-montaje.md`](docs/guia-montaje.md). Todo lo personal va en
+ficheros fuera de git que creas a partir de un ejemplo:
 
-| File | From | What you put in it |
+| Fichero | Se copia de | Qué pones en él |
 |---|---|---|
-| `firmware/robert_motor/secrets.h` | `secrets.example.h` | Your Wi-Fi networks and a `CONTROL_TOKEN` you make up |
-| `pi/.env` | `pi/.env.example` | `ESP32_TOKEN` (= that token), **your AI key** (`AI_PROVIDER`, `AI_API_KEY`), your name (`OWNER_NAME`), and your robot's calibration |
-| `pi/scripts/local.env` | `local.env.example` | Optional: your Pi's `PI=<user>@<host>`, so the scripts don't need it every time |
-| `pi/memory_seed.json` | `memory_seed.example.json` | Optional: the stories your robot starts with |
-| `pi/certs/` | `tools/make_certs.sh` | Optional: local HTTPS for the PWA's push-to-talk |
+| `firmware/robert_motor/secrets.h` | `secrets.example.h` | Tus redes Wi-Fi y un `CONTROL_TOKEN` que te inventes |
+| `pi/.env` | `pi/.env.example` | `ESP32_TOKEN` (= ese token), **tu clave de IA** (`AI_PROVIDER`, `AI_API_KEY`), tu nombre (`OWNER_NAME`) y la calibración de tu robot |
+| `pi/scripts/local.env` | `local.env.example` | Opcional: el `PI=<usuario>@<host>` de tu Raspberry, para no escribirlo cada vez en los scripts |
+| `pi/memory_seed.json` | `memory_seed.example.json` | Opcional: las vivencias con las que arranca tu robot |
+| `pi/certs/` | `tools/make_certs.sh` | Opcional: HTTPS local para el pulsar para hablar de la PWA |
 
-For the AI key: Gemini keys come from <https://aistudio.google.com/apikey>, OpenAI keys from
-<https://platform.openai.com/api-keys> (a ChatGPT Plus subscription is not an API key). Both are
-pay-as-you-go: Robert says so out loud when the balance runs out. The calibration values in
-`.env.example` are ours; measure your robot with the tools in [Calibration](#calibration).
+La clave de IA: las de Gemini se sacan en <https://aistudio.google.com/apikey> y las de OpenAI en
+<https://platform.openai.com/api-keys> (una suscripción a ChatGPT Plus no es una clave de API). Las
+dos se pagan por uso: Robert lo dice en voz alta cuando se acaba el saldo. Los valores de
+calibración de `.env.example` son los nuestros; mide tu robot con las herramientas de
+[Calibración](#calibración).
 
-### 1. Backend on a laptop, without hardware
+### 1. Backend en un portátil, sin hardware
 
 ```sh
 cd pi && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-cp .env.example .env                       # ESP32_TOKEN must equal CONTROL_TOKEN in secrets.h
-.venv/bin/python -m pytest                 # 103 tests, including the ESP32 simulator
+cp .env.example .env                       # ESP32_TOKEN tiene que ser igual a CONTROL_TOKEN de secrets.h
+.venv/bin/python -m pytest                 # 103 tests, simulador del ESP32 incluido
 .venv/bin/python -m robert.sim.fake_esp32 --port 8181 --token dev &
 ESP32_HOST=127.0.0.1 ESP32_PORT=8181 ESP32_TOKEN=dev LIDAR_ENABLED=false .venv/bin/python -m robert.main
-# PWA at http://localhost:8000
+# PWA en http://localhost:8000
 ```
 
-### 2. Fresh Raspberry Pi
+### 2. Raspberry Pi desde cero
 
-Flash Raspberry Pi OS Lite (64-bit) with the Imager (user, Wi-Fi, SSH key), then from your computer:
+Graba Raspberry Pi OS Lite (64 bits) con Raspberry Pi Imager (usuario, Wi-Fi y clave SSH) y,
+después, desde tu ordenador:
 
 ```sh
-PI=<user>@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/setup_pi.sh   # code, boot overlays, venv, models, services
-# reboot the Pi, then:
-pi/scripts/setup_pi.sh audio      # ReSpeaker levels, mask PipeWire
-pi/scripts/setup_pi.sh protect    # read-only SD overlay (a power cut can no longer corrupt the card); reboot
+PI=<usuario>@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/setup_pi.sh   # código, overlays de arranque, venv, modelos, servicios
+# reinicia la Pi y después:
+pi/scripts/setup_pi.sh audio      # niveles del ReSpeaker, enmascarar PipeWire
+pi/scripts/setup_pi.sh protect    # SD en sólo lectura (un corte de luz ya no puede corromperla); reinicia
 ```
 
-`setup_pi.sh` is idempotent: it syncs the code and `.env`, builds and installs the ReSpeaker
-overlay, enables the camera, moves the journal to RAM, creates the venv, downloads the Piper and
-wake-word models, copies the YOLO model if `YOLO_ONNX` is set, installs the three systemd units
-and boots to console.
+`setup_pi.sh` se puede repetir sin problema: sincroniza el código y el `.env`, compila e instala
+el overlay del ReSpeaker, activa la cámara, pasa el journal a RAM, crea el venv, descarga los
+modelos de Piper y de la palabra de activación, copia el modelo YOLO si defines `YOLO_ONNX`,
+instala las tres unidades systemd y deja la Pi arrancando a consola.
 
-### 3. Day-to-day deployment
+### 3. Despliegue del día a día
 
 ```sh
-pi/scripts/deploy.sh              # rsync pi/ frontend/ ros/ + pip + restart (no sudo)
-ssh <user>@robert.local journalctl -u robert -u robert-voice -u robert-vision -f
+pi/scripts/deploy.sh              # rsync de pi/ frontend/ ros/ + pip + reinicio (sin sudo)
+ssh <usuario>@robert.local journalctl -u robert -u robert-voice -u robert-vision -f
 ```
 
-With the SD protected, changes need `setup_pi.sh unprotect`, reboot, deploy, `protect`, reboot.
+Con la SD protegida, para cambiar algo hace falta `setup_pi.sh unprotect`, reiniciar, desplegar,
+`protect` y reiniciar.
 
-### 4. Street mode
+### 4. Modo calle
 
-`HOTSPOT="<your hotspot>" pi/scripts/street_ready.sh` flashes the ESP32 over the air, deploys,
-adds your phone hotspot (2.4 GHz; on an iPhone, "Maximise compatibility") as a NetworkManager profile on the Pi and re-protects the
-SD. At home the hotspot stays off so the Pi and the ESP32 cannot pick different networks.
+`HOTSPOT="<tu hotspot>" pi/scripts/street_ready.sh` actualiza el ESP32 por Wi-Fi, despliega,
+añade el hotspot de tu móvil (2,4 GHz; en iPhone, "Maximizar compatibilidad") como perfil de
+NetworkManager en la Pi y vuelve a proteger la SD. En casa el hotspot se queda apagado para que la
+Pi y el ESP32 no acaben en redes distintas.
 
 ---
 
-## Calibration
+## Calibración
 
-| What | Tool | Result |
+| Qué | Herramienta | Resultado |
 |---|---|---|
-| LiDAR self-mask, front and rotation sense | `tools/calibrate_lidar.py` (guided; mask first, then frame) | `pi/lidar_mask.json`, `LIDAR_OFFSET_DEG`, `LIDAR_CLOCKWISE` |
-| Ultrasonic / LiDAR front alignment | `tools/calibrate_motion.py offset` | Confirms 0° is straight ahead |
-| Speed per PWM | `tools/calibrate_motion.py forward --pwm 100` (wall ≥ 2 m ahead, LiDAR as the tape) | `MPS_PER_PWM` |
-| Effective track width | `tools/calibrate_motion.py spin --pwm 100 --mps-per-pwm <v>` | `TRACK_EFF_M` |
-| Real-room scans for tests | `tools/record_scans.py` | `pi/tests/data/room.jsonl` |
-| Bench tests of the ESP32 without the Pi | `tools/esp32_cli.py` with `monitor`, `bench`, `watchdog`, `garbage` or `drive` | — |
+| Automáscara del LiDAR, frontal y sentido de giro | `tools/calibrate_lidar.py` (guiado; primero la máscara, después la orientación) | `pi/lidar_mask.json`, `LIDAR_OFFSET_DEG`, `LIDAR_CLOCKWISE` |
+| Alineación del frontal entre ultrasonido y LiDAR | `tools/calibrate_motion.py offset` | Confirma que 0° es justo delante |
+| Velocidad por PWM | `tools/calibrate_motion.py forward --pwm 100` (pared a ≥ 2 m delante, el LiDAR como cinta métrica) | `MPS_PER_PWM` |
+| Ancho de vía efectivo | `tools/calibrate_motion.py spin --pwm 100 --mps-per-pwm <v>` | `TRACK_EFF_M` |
+| Escaneos de una habitación real para los tests | `tools/record_scans.py` | `pi/tests/data/room.jsonl` |
+| Pruebas del ESP32 en el banco sin la Pi | `tools/esp32_cli.py` con `monitor`, `bench`, `watchdog`, `garbage` o `drive` | — |
 
-Calibration is done with the robot on the floor, open space, and a hand near the XT60.
+La calibración se hace con el robot en el suelo, en un espacio despejado y con una mano cerca del
+XT60.
 
 ---
 
-## Testing
+## Tests
 
-`pi/tests/` (pytest, 92 tests, ~10 s) covers each layer without hardware:
+`pi/tests/` (pytest, 103 tests, ~13 s) cubre cada capa sin hardware:
 
-| File | What it checks |
+| Fichero | Qué comprueba |
 |---|---|
-| `test_integration.py` | Real backend against the `fake_esp32` simulator: handshake, token rejection, 10 Hz sender, stop on disconnect |
-| `test_api.py`, `test_voice_api.py` | WebSocket drive/release/malformed → stop; HTTP stop/state; localhost-only routes; bounded nudges |
-| `test_motion.py` | Clamps, dead-man, release only by the current driver, stop listeners |
-| `test_lidar.py` | Packet framing, checksum, decoding and binning against captured bytes |
-| `test_nav.py`, `test_follow.py` | Guard on a recorded room (`data/room.jsonl`), explorer and planner behaviour, follow acquisition/tracking/loss (`navsim.py` provides a small kinematic simulator) |
-| `test_vision.py` | Letterbox, NMS, bearing maths |
-| `test_voice_live.py` | Conversation driver through the Gemini adapter with fake session/mic/player: streaming, muting, tools, photos, memory tools, prompt |
-| `test_voice_providers.py` | OpenAI Realtime adapter against a scripted socket (session setup, 24 kHz resampling, audio, tools, photo, errors), provider choice and settings |
-| `test_social_dance_photos.py` | Social trigger rules, dance bounds and cancellation, photo listing |
-| `test_memory.py` | Diary and summary across boots, observed transitions, seed, pruning, unwritable directory, API |
+| `test_integration.py` | Backend real contra el simulador `fake_esp32`: saludo, rechazo del token, emisor a 10 Hz, stop al desconectar |
+| `test_api.py`, `test_voice_api.py` | Conducir/soltar/mensaje mal formado por WebSocket → stop; stop/estado por HTTP; rutas sólo para localhost; empujones acotados |
+| `test_motion.py` | Límites, hombre muerto, que sólo suelte quien conduce, avisos de parada |
+| `test_lidar.py` | Tramas, checksum, decodificación y celdas con bytes capturados del sensor |
+| `test_nav.py`, `test_follow.py` | Guardián sobre una habitación grabada (`data/room.jsonl`), comportamiento del explorador y del planificador, enganche/seguimiento/pérdida en el sígueme (`navsim.py` es un pequeño simulador cinemático) |
+| `test_vision.py` | Letterbox, NMS, cálculo de direcciones |
+| `test_voice_live.py` | La conversación a través del adaptador de Gemini con sesión/micro/reproductor simulados: streaming, silencio del micro, herramientas, fotos, herramientas de memoria, prompt |
+| `test_voice_providers.py` | Adaptador de OpenAI Realtime contra un socket simulado (configuración de la sesión, remuestreo a 24 kHz, audio, herramientas, foto, errores), elección de proveedor y ajustes |
+| `test_social_dance_photos.py` | Reglas del saludo social, límites y cancelación de los bailes, listado de fotos |
+| `test_memory.py` | Diario y resumen entre arranques, cambios observados, semilla, poda, carpeta sin permisos de escritura, API |
 
-`tests/conftest.py` gives every test its own memory directory. The ESP32 simulator mirrors the
-firmware's safety semantics (token handshake, single controller, watchdog, obstacle veto), so
-the backend can be run end-to-end on a laptop.
+`tests/conftest.py` da a cada test su propia carpeta de memoria. El simulador del ESP32 reproduce
+la semántica de seguridad del firmware (saludo con token, un único controlador, watchdog, veto por
+obstáculo), así que el backend se puede ejecutar de principio a fin en un portátil.
 
 ---
 
-## Repository layout
+## Estructura del repositorio
 
 ```
-firmware/robert_motor/   ESP32 sketch (see "ESP32 firmware")
-pi/                      Raspberry Pi side: package robert/, tests/, deploy/ (systemd), scripts/, .env.example
-frontend/                PWA (index.html, app.js, style.css, manifest, icon)
-ros/                     ROS 2 LaserScan bridge
-tools/                   Calibration, bench and recording tools run from the laptop
-docs/lidar-y-ros.md      LiDAR fundamentals and ROS 2 practice (Spanish)
-docs/memoria.md          Memory format and API (Spanish)
-docs/guia-montaje.md     Wiring and assembly guide: power, pinout, audio, LiDAR, failsafe (Spanish)
-cad/                     Printable parts: Bambu Studio project, 16 plates (Spanish guide)
+firmware/robert_motor/   sketch del ESP32 (ver "Firmware del ESP32")
+pi/                      lado de la Raspberry Pi: paquete robert/, tests/, deploy/ (systemd), scripts/, .env.example
+frontend/                PWA (index.html, app.js, style.css, manifest, icono)
+ros/                     puente LaserScan para ROS 2
+tools/                   herramientas de calibración, banco y grabación que se ejecutan desde el ordenador
+docs/guia-montaje.md     guía de montaje eléctrico: componentes, alimentación, pines, audio, LiDAR, failsafe
+docs/lidar-y-ros.md      fundamentos del LiDAR y práctica con ROS 2
+docs/memoria.md          formato y API de la memoria
+cad/                     piezas para imprimir: proyecto de Bambu Studio, 16 placas
 ```
 
-Git-ignored on purpose: `firmware/robert_motor/secrets.h`, `pi/.env`, `pi/scripts/local.env`,
+Fuera de git a propósito: `firmware/robert_motor/secrets.h`, `pi/.env`, `pi/scripts/local.env`,
 `pi/memory_seed.json`, `pi/certs/`, `pi/memory/`.
 
 ---
 
-## Project status and known limitations
+## Estado del proyecto y limitaciones conocidas
 
-**Timeline.** Milestone 1 (2026-10-22): firmware, backend, PWA, LiDAR radar, collision guard
-and Explore, ROS bridge. 2026-10-23: voice with Gemini Live. 2026-10-24: Pi setup script,
-LiDAR self-mask and motion calibration, camera for the voice, follow-me, read-only SD.
-2026-10-25: first day on the street (faster follow, dances, selfies, social greetings, hotspot,
-push-to-talk). 2026-10-28: memory across sessions. 2026-10-29: the voice's AI is a choice
-(Gemini or OpenAI) and every personal value moved to git-ignored files.
+**Cronología.** Hito 1 (2026-10-22): firmware, backend, PWA, radar del LiDAR, guardián de
+colisiones y Explorar, puente con ROS. 2026-10-23: voz con Gemini Live. 2026-10-24: script de
+instalación de la Pi, automáscara del LiDAR y calibración del movimiento, cámara para la voz,
+sígueme, SD en sólo lectura. 2026-10-25: primer día en la calle (seguimiento más rápido, bailes,
+selfies, saludos sociales, hotspot, pulsar para hablar). 2026-10-28: memoria entre sesiones.
+2026-10-29: la IA de la voz se puede elegir (Gemini u OpenAI), todos los valores personales pasan
+a ficheros fuera de git, y se publican las piezas 3D y la guía de montaje.
 
-**Known limitations and open decisions.**
+**Limitaciones conocidas y decisiones abiertas.**
 
-- No encoders and no map: speeds are open-loop estimates; Explore and Follow are purely reactive.
-- The LiDAR sees only its plane: kerbs and steps are invisible to it, and the HC-SR04 points
-  forward horizontally, so street use is limited to flat pavements. Tilting the ultrasonic sensor
-  toward the ground is planned.
-- A missing ultrasonic echo is treated as "clear" (also when the sensor is unplugged); the
-  `us_timeouts` counter makes this visible but does not stop the robot.
-- The PWA over plain HTTP cannot be installed as an app on the phone; it works as a page, and the
-  HTTPS variant needs the local CA installed once.
-- Selfies and the memory live in RAM while the SD is protected; they must be pulled before
-  switching off.
-- Voice depends on the network (the AI provider); offline, Robert only says that he has no network.
-- Hardware details still worth documenting in this repository: the exact battery pack and the
-  5 V regulation for the Pi and the ESP32, and photos of the build.
+- Sin encoders ni mapa: las velocidades son estimaciones en lazo abierto; Explorar y Sígueme son
+  puramente reactivos.
+- El LiDAR sólo ve en su plano: bordillos y escalones le son invisibles, y el HC-SR04 apunta hacia
+  delante en horizontal, así que en la calle sólo sirve para aceras llanas. Está previsto inclinar
+  el ultrasonido hacia el suelo.
+- Un eco del ultrasonido que no llega se trata como "libre" (también si el sensor está
+  desconectado); el contador `us_timeouts` lo deja ver, pero no para el robot.
+- La PWA por HTTP no se puede instalar como app en el móvil; funciona como página, y la versión
+  HTTPS necesita instalar la CA local una vez.
+- Con la SD protegida, los selfies y la memoria viven en RAM; hay que copiarlos antes de apagar.
+- La voz depende de la red (el proveedor de IA); sin conexión, Robert sólo dice que no tiene red.
+- Aún falta documentar en el repositorio el pinout interno del LiDAR (depende del adaptador
+  USB-UART) y fotos del montaje.
 
 ---
 
-## License
+## Licencia
 
-[PolyForm Noncommercial 1.0.0](LICENSE.md): you can use, study, modify and share this project
-and build your own rover with it for any **noncommercial** purpose (personal projects, hobby,
-education, research). Making money with it (selling robots, kits or a product or service built
-on this code) is not allowed. For a commercial use, ask the author for a separate license.
-The printable parts in `cad/` are under [CC BY-NC 4.0](cad/LICENSE.md), also noncommercial.
-Third-party libraries and models it installs keep their own licenses.
+[PolyForm Noncommercial 1.0.0](LICENSE.md): puedes usar, estudiar, modificar y compartir este
+proyecto y construir tu propio rover con él para cualquier fin **no comercial** (proyectos
+personales, hobby, educación, investigación). No se permite ganar dinero con él (vender robots,
+kits o un producto o servicio basado en este código). Para un uso comercial, pide al autor una
+licencia aparte. Las piezas para imprimir de `cad/` están bajo [CC BY-NC 4.0](cad/LICENSE.md),
+también no comercial. Las librerías y modelos de terceros que instala mantienen sus propias
+licencias.

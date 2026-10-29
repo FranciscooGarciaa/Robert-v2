@@ -514,7 +514,7 @@ y, para parar en seco:
 { "type": "stop" }
 ```
 
-El protocolo completo está en el [README](../README.md#protocol-v1-json-over-websocket-pi--esp32).
+El protocolo completo está en el [README](../README.md#protocolo-v1-json-por-websocket-pi--esp32).
 
 ## 14. Failsafe
 
@@ -664,5 +664,5 @@ el primer encendido no sea el último.
 3. Copia `firmware/robert_motor/secrets.example.h` a `secrets.h` y flashea el ESP32 (LiPo
    desconectada).
 4. Prepara la Raspberry con `pi/scripts/setup_pi.sh` y rellena `pi/.env` (tu clave de IA
-   incluida): ver ["Build your own"](../README.md#build-your-own) en el README.
-5. Calibra el LiDAR y el movimiento ([Calibration](../README.md#calibration)).
+   incluida): ver ["Construye el tuyo"](../README.md#construye-el-tuyo) en el README.
+5. Calibra el LiDAR y el movimiento ([Calibración](../README.md#calibración)).
