@@ -737,3 +737,13 @@ push-to-talk). 2026-10-28: memory across sessions. 2026-10-29: the voice's AI is
 - Voice depends on the network (the AI provider); offline, Robert only says that he has no network.
 - Hardware details still worth documenting in this repository: the exact battery pack and the
   5 V regulation for the Pi and the ESP32, and photos of the build.
+
+---
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md): you can use, study, modify and share this project
+and build your own rover with it for any **noncommercial** purpose (personal projects, hobby,
+education, research). Making money with it (selling robots, kits or a product or service built
+on this code) is not allowed. For a commercial use, ask the author for a separate license.
+Third-party libraries and models it installs keep their own licenses.
