@@ -6,6 +6,47 @@ es todo lo necesario para construirlo desde cero. Los pines y sentidos de giro d
 los validados en el robot (`firmware/robert_motor/config.h`); si tu montaje difiere, cambia
 `config.h`, no el cableado a ciegas.
 
+## Lista de componentes
+
+Todo lo que necesitas antes de empezar. Las piezas impresas están en [`cad/`](../cad/README.md).
+
+### Electrónica
+
+| Cant. | Componente | Función |
+|---|---|---|
+| 1 | Raspberry Pi 4 (1 GB) | Ordenador principal |
+| 1 | Tarjeta microSD de buena marca | Sistema de la Raspberry (las genéricas fallan con los cortes de corriente) |
+| 1 | ESP32 NodeMCU / ESP-WROOM-32 | Control de motores y sensores |
+| 1 | Cytron MDD10A Rev 2.0 | Driver doble de motores |
+| 4 | Motor DT25-370 12 V ~300 RPM | Tracción (dos por lado) |
+| 1 | LiPo 3S | Alimentación de motores y electrónica |
+| 1 | Alarma de LiPo | Avisa cuando la batería baja |
+| 1 | Par de conectores XT60 | Conexión de la LiPo y corte de emergencia |
+| 1 | LM2596 | 12,6 V → 5 V para el ESP32 y el amplificador |
+| 1 | Powerbank 5 V / 3 A | Alimentación de la Raspberry |
+| 1 | HC-SR04 | Obstáculos frontales |
+| 1 | Resistencia 1 kΩ | Divisor del ECHO |
+| 1 | Resistencia 2 kΩ | Divisor del ECHO |
+| 1 | WitMotion D6 (DTOF LiDAR) | Escáner de 360° |
+| 1 | Adaptador USB-UART | LiDAR → Raspberry |
+| 1 | Cámara OV5647 5 MP (CSI) | Visión |
+| 1 | ReSpeaker 2-Mics Pi HAT V2.0 | Micrófonos y audio |
+| 1 | PAM8403 | Amplificador estéreo |
+| 2 | Altavoz 3 W | Voz |
+| 1 | Cable jack 3,5 mm | ReSpeaker → PAM8403 |
+| — | Cable 16 AWG | Potencia principal |
+| — | Cable 22 AWG | Señal, audio y cargas pequeñas |
+
+### Herramientas
+
+| Herramienta | Para qué |
+|---|---|
+| **Smoke stopper con XT60** | El primer encendido sin quemar nada si hay un cortocircuito ([ver abajo](#primer-encendido-usa-un-smoke-stopper)) |
+| Multímetro | Ajustar el LM2596, comprobar tensiones y la continuidad del cable jack |
+| Soldador y estaño | Conectores, divisor del ECHO, cables de motores y altavoces |
+| Tubo termorretráctil | Aislar cada soldadura |
+| Impresora 3D | El chasis, las ruedas y la tapa ([`cad/`](../cad/README.md)) |
+
 ## 1. Arquitectura general
 
 ```text
@@ -93,6 +134,8 @@ LiPo -
  ├── MDD10A VIN-
  └── LM2596 IN-
 ```
+
+La primera vez que conectes la LiPo hazlo **a través de un smoke stopper** ([ver abajo](#primer-encendido-usa-un-smoke-stopper)).
 
 El conector **XT60** es el corte de emergencia físico: el botón STOP de la app es lógico, el
 XT60 desconectado es definitivo. La alarma de batería LiPo va directamente al **conector de
@@ -581,35 +624,43 @@ propio ESP32, sin depender de la Raspberry.
                    ESP32                  PAM8403
 ```
 
-## Lista de materiales eléctricos
+## Primer encendido: usa un smoke stopper
 
-| Componente | Función |
-|---|---|
-| Raspberry Pi 4 (1 GB) | Ordenador principal |
-| ESP32 NodeMCU / ESP-WROOM-32 | Control de motores y sensores |
-| Cytron MDD10A Rev 2.0 | Driver doble de motores |
-| 4× DT25-370 12 V ~300 RPM | Motores |
-| LiPo 3S | Alimentación de motores y electrónica |
-| LM2596 | 12,6 V → 5 V |
-| HC-SR04 | Obstáculos frontales |
-| Resistencia 1 kΩ | Divisor del ECHO |
-| Resistencia 2 kΩ | Divisor del ECHO |
-| WitMotion D6 (DTOF LiDAR) | Escáner de 360° |
-| Adaptador USB-UART | LiDAR → Raspberry |
-| ReSpeaker 2-Mics Pi HAT V2.0 | Micrófonos y audio |
-| PAM8403 | Amplificador estéreo |
-| 2× altavoz 3 W | Voz |
-| Cámara OV5647 (CSI) | Visión |
-| Powerbank 5 V | Raspberry Pi |
-| Alarma de LiPo | Protección de la batería |
-| XT60 | Conexión de la LiPo y corte de emergencia |
-| Cable 16 AWG | Potencia principal |
-| Cable 22 AWG | Señal, audio y cargas pequeñas |
+Un **smoke stopper** es un pequeño limitador de corriente que se pone entre la LiPo y el robot
+con dos conectores XT60. Si hay un cortocircuito (un cable mal soldado, una polaridad invertida,
+un tornillo tocando una pista), en lugar de dejar pasar todo lo que da la LiPo, que son decenas
+de amperios, corta la corriente y se enciende su luz. Así no se quema nada ni sale humo, de ahí
+el nombre.
+
+```text
+LiPo ── XT60 ── SMOKE STOPPER ── XT60 ── Robert
+```
+
+Úsalo:
+
+- **la primera vez** que enciendes el robot;
+- **cada vez que cambies el cableado** o abras el robot para tocar algo eléctrico.
+
+Cómo:
+
+1. Con todo cableado, conecta la LiPo a Robert **a través del smoke stopper**.
+2. Si su luz se queda encendida o parpadea, **desconecta en seguida**: hay un cortocircuito.
+   Revisa polaridades, soldaduras y que ningún cable pelado toque otro.
+3. Si no se enciende, mide con el multímetro: ~5 V a la salida del LM2596 y en el VIN del ESP32,
+   y la tensión de la LiPo en la entrada del MDD10A.
+4. Cuando todo esté bien, **quítalo** y conecta la LiPo directamente para el uso normal: los
+   motores piden más corriente de la que deja pasar, y con él puesto pueden no arrancar o
+   hacer saltar la protección.
+
+La LiPo es lo más peligroso del robot: un cortocircuito directo puede derretir cables o
+incendiar la batería. El smoke stopper cuesta unos pocos euros y es la forma más barata de que
+el primer encendido no sea el último.
 
 ## Siguientes pasos
 
 1. Imprime las piezas de [`cad/`](../cad/README.md).
-2. Cablea siguiendo esta guía y comprueba cada tensión con el multímetro antes de conectar.
+2. Cablea siguiendo esta guía, ajusta el LM2596 con el multímetro y haz el primer encendido
+   **con el smoke stopper**.
 3. Copia `firmware/robert_motor/secrets.example.h` a `secrets.h` y flashea el ESP32 (LiPo
    desconectada).
 4. Prepara la Raspberry con `pi/scripts/setup_pi.sh` y rellena `pi/.env` (tu clave de IA
