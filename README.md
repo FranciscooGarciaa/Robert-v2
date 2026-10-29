@@ -600,7 +600,8 @@ drives, explores and follows normally; the voice answers with a local Piper phra
 ### Build your own
 
 The printable parts are in [`cad/`](cad/README.md): a Bambu Studio project with all 16 plates
-laid out for an A1 mini, in PLA. Everything personal lives in git-ignored files that you create from an example:
+laid out for an A1 mini, in PLA. The wiring, step by step, with power, pinout and failsafe, is in
+[`docs/guia-montaje.md`](docs/guia-montaje.md) (Spanish). Everything personal lives in git-ignored files that you create from an example:
 
 | File | From | What you put in it |
 |---|---|---|
@@ -707,6 +708,7 @@ ros/                     ROS 2 LaserScan bridge
 tools/                   Calibration, bench and recording tools run from the laptop
 docs/lidar-y-ros.md      LiDAR fundamentals and ROS 2 practice (Spanish)
 docs/memoria.md          Memory format and API (Spanish)
+docs/guia-montaje.md     Wiring and assembly guide: power, pinout, audio, LiDAR, failsafe (Spanish)
 cad/                     Printable parts: Bambu Studio project, 16 plates (Spanish guide)
 ```
 
