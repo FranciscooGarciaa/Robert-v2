@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Sync backend + frontend to the Pi and restart the service.
-#   PI=pi@robert.local pi/scripts/deploy.sh
-# If the Mac cannot resolve robert.local, use the IP and keep host-key checks:
-#   PI=pi@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/deploy.sh
+#   PI=<user>@robert.local pi/scripts/deploy.sh      (or set PI once in pi/scripts/local.env)
+# If your computer cannot resolve robert.local, use the IP and keep host-key checks:
+#   PI=<user>@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/deploy.sh
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+[ -f "$ROOT/pi/scripts/local.env" ] && . "$ROOT/pi/scripts/local.env"   # your PI, SSH_OPTS, HOTSPOT (gitignored)
 PI="${PI:-pi@robert.local}"
 SSH_OPTS="${SSH_OPTS:-}"
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 rsync -az --delete -e "ssh $SSH_OPTS" \
   --exclude '.venv' --exclude '__pycache__' --exclude '.pytest_cache' --exclude '.env' --exclude 'robert-ca.key' --exclude 'robert-ca.srl' \

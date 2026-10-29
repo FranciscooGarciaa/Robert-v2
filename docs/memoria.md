@@ -27,7 +27,7 @@ eventos en el diario de dos maneras:
   `follow_lost`, `follow_too_far`…), `explore`, `stuck` y `dance`.
 
 Además hay **vivencias** (`story`): recuerdos contados en primera persona, como el día que salió a la
-calle. Las primeras vienen en `pi/memory_seed.json` (en el repo) y se añaden a `memory.json` una sola
+calle. Las primeras vienen en `pi/memory_seed.json` (fuera de git: cópialo de `pi/memory_seed.example.json` y escribe las tuyas) y se añaden a `memory.json` una sola
 vez, en el primer arranque que no las tenga. Se pueden añadir más por HTTP (abajo).
 
 Cada evento es una línea JSON con `t` (hora local ISO), `kind` y sus datos:
@@ -47,7 +47,7 @@ Cada evento es una línea JSON con `t` (hora local ISO), `kind` y sus datos:
   "boots": 12,
   "totals": {"conversation": 40, "talk": 212, "photo": 9, "dance": 4, "follow": 7, "greeting": 5},
   "sessions": [{"id": "20261025-103012", "started": "…", "ended": "…", "duration_s": 2460, "counts": {"photo": 2}}],
-  "stories": [{"t": "2026-10-25", "text": "Mi primera salida a la calle, con Fran…"}],
+  "stories": [{"t": "2026-10-25", "text": "Mi primera salida a la calle…"}],
   "notes": [{"t": "…", "text": "Marta es la vecina del segundo"}],
   "recent_talks": [{"t": "…", "heard": "…", "reply": "…"}],
   "recent_events": [ …los 50 últimos eventos que no son rutina… ]
@@ -69,7 +69,7 @@ En total: 40 conversaciones, 9 fotos, 4 bailes, 7 veces siguiendo a alguien, 5 s
 Última sesión: 2026-10-27 18:02, duró 41 min; 3 conversaciones, 2 fotos.
 Esta sesión: llevas 12 min encendido; 1 conversación.
 Lo que has vivido (tus recuerdos, contados por ti):
-- (2026-10-25) Mi primera salida a la calle, con Fran. No las tenía todas conmigo, pero salí…
+- (2026-10-25) Mi primera salida a la calle. No las tenía todas conmigo, pero salí…
 Cosas que te han pedido recordar:
 - (2026-10-25 12:40) Marta es la vecina del segundo
 Últimas conversaciones:

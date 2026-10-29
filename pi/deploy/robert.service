@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/robert/pi
-ExecStart=/home/pi/robert/pi/.venv/bin/python -m robert.main
+User=@USER@
+WorkingDirectory=@HOME@/robert/pi
+ExecStart=@HOME@/robert/pi/.venv/bin/python -m robert.main
 Restart=always
 RestartSec=2
 Environment=PYTHONUNBUFFERED=1

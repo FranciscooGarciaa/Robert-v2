@@ -5,7 +5,7 @@ a real-time **ESP32 motor and safety controller**, a **Raspberry Pi** that runs 
 navigation, voice and a web control panel, and a **progressive web app (PWA)** used as the
 remote control from a phone. It can be driven by hand, explore a room on its own using a 2D
 LiDAR, follow a person using the camera and the LiDAR together, hold a spoken conversation
-through Gemini Live, take photos, greet strangers, and keep a memory of what it experiences
+through a live speech-to-speech AI (Gemini Live or OpenAI Realtime, your choice), take photos, greet strangers, and keep a memory of what it experiences
 from one session to the next.
 
 This document is the technical guide to the project: what is being built, why it is built
@@ -55,7 +55,7 @@ to follow you, and it remembers what happened on previous days.
 | Collision guard on every command | LiDAR scan swept along the commanded path; speed scaled down, blocked only in the dangerous direction | `pi/robert/nav/guard.py` |
 | Explore a room autonomously | Reactive local planner over a fan of arcs, corridor-based goal selection with hysteresis | `pi/robert/nav/explore.py`, `planner.py`, `autonomy.py` |
 | Follow a person | Camera (YOLO11n) proposes a direction, LiDAR cluster tracking (alpha-beta filter) locks on and follows at 0.6 m | `pi/robert/nav/follow.py`, `pi/robert/vision/` |
-| Spoken conversation | Local wake word, then a streaming Gemini Live session with function calling | `pi/robert/voice/` |
+| Spoken conversation | Local wake word, then a streaming Gemini Live or OpenAI Realtime session with function calling | `pi/robert/voice/` |
 | Look through the camera, take selfies | Camera frames sent to the model; full-resolution stills served by the PWA | `pi/robert/vision/service.py` |
 | Social mode | Greets someone who stops in front of it for 2 s (LiDAR proposes, camera confirms) | `pi/robert/nav/social.py` |
 | Dances and short voice-commanded moves | Fixed, bounded choreographies and 1 s nudges, all through the same guarded motion path | `pi/robert/robot/dance.py`, `nudge.py` |
@@ -88,7 +88,7 @@ flowchart LR
 
     subgraph Pi["Raspberry Pi 4 (pi/)"]
         B["robert.service<br/>FastAPI backend :8000 / :8443<br/>motion arbiter, guard, autonomy,<br/>LiDAR reader, memory"]
-        V["robert-voice.service<br/>wake word, Gemini Live,<br/>speaker, :8001 :8003"]
+        V["robert-voice.service<br/>wake word, live AI,<br/>speaker, :8001 :8003"]
         C["robert-vision.service<br/>camera owner, YOLO11n :8002"]
         L["WitMotion D6 LiDAR<br/>USB serial 230400"]
         M["ReSpeaker 2-Mics HAT<br/>mic + speaker"]
@@ -466,7 +466,7 @@ pipeline, measured on the Pi (2026-10-23):
 ```mermaid
 flowchart LR
     A["ReSpeaker mic<br/>arecord 16 kHz mono"] --> W["openWakeWord<br/>(ONNX, 80 ms frames)"]
-    W -- "wake word<br/>(or /greet, or push-to-talk)" --> S["Gemini Live session<br/>(WebSocket, ~0.5 s to connect)"]
+    W -- "wake word<br/>(or /greet, or push-to-talk)" --> S["Live AI session: Gemini or OpenAI<br/>(WebSocket, ~0.5 s to connect)"]
     S -- "audio 24 kHz PCM16<br/>chunk by chunk" --> P["aplay → PAM amp → speaker"]
     S -- "function calls" --> B["Backend /api/voice/command<br/>(bounded, guarded)"]
     S -- "mirar / hacer_foto" --> C["Vision service"]
@@ -475,7 +475,14 @@ flowchart LR
 
 - **Wake word**: openWakeWord running on `onnxruntime` (the bundled `hey_jarvis` model by
   default, `WAKE_MODEL` can point to a custom `.onnx`). Only this runs all the time.
-- **Conversation**: one Gemini Live session (`gemini-3.8-live`, voice `Puck`) streams the
+- **Provider**: `AI_PROVIDER` + `AI_API_KEY` in `pi/.env` pick the AI. `gemini` (Gemini Live,
+  `gemini-3.8-live`, voice `Puck`; the one measured below) or `openai` (OpenAI Realtime, the model
+  behind ChatGPT's voice: `gpt-realtime`, voice `marin`). Each is an adapter in
+  `voice/providers/` that maps its live session to the same small interface (send audio, receive
+  audio/transcripts/function calls, answer the calls); adding another provider means writing one
+  more adapter. The OpenAI adapter is covered by tests against a scripted socket but has not been
+  tried on the robot yet.
+- **Conversation**: one live session streams the
   microphone; the server-side VAD ends each turn (600 ms of silence, low end-of-speech
   sensitivity, chosen after 300 ms cut people off at their first pause). Replies arrive as 24 kHz
   audio and are played as they stream: 0.6–0.8 s from the end of speech to the first audio.
@@ -554,7 +561,8 @@ window or unloading the page sends a stop.
 | `fastapi`, `uvicorn`, `websockets` | HTTP/WebSocket API, PWA hosting, ESP32 client |
 | `pyserial` | LiDAR serial port |
 | `numpy` | Scan processing, footprint sweeps, planners, image conversion |
-| `google-genai` | Gemini Live session (voice) |
+| `google-genai` | Gemini Live session (voice, `AI_PROVIDER=gemini`) |
+| `websockets` | Also the OpenAI Realtime session (voice, `AI_PROVIDER=openai`), with no extra SDK |
 | `openwakeword` (installed `--no-deps`) + `onnxruntime`, `scikit-learn`, `scipy`, `tqdm`, `requests` | Wake word on the Pi's CPU (openwakeword pins `tflite-runtime`, which has no Python 3.13 aarch64 wheel, so it runs on `onnxruntime`) |
 | `webrtcvad-wheels` | Local voice activity detection |
 | `piper-tts` | Offline Spanish phrases (e.g. "no network") via the `es_ES-davefx-medium` voice |
@@ -580,7 +588,8 @@ Docker for ROS 2 and `ultralytics` for exporting the YOLO model.
 
 ### Cloud
 
-Only one external service: the **Gemini API** (`GEMINI_API_KEY`), for the voice. Everything else
+Only one external service: the **AI for the voice**, Gemini or OpenAI, with your own API key
+(`AI_PROVIDER`, `AI_API_KEY` in `pi/.env`; an older `GEMINI_API_KEY` still works). Everything else
 (wake word, VAD, detection, navigation, memory) runs on the robot. Without network the robot
 drives, explores and follows normally; the voice answers with a local Piper phrase.
 
@@ -588,12 +597,29 @@ drives, explores and follows normally; the voice answers with a local Piper phra
 
 ## Build, setup and deployment
 
+### Build your own
+
+Everything personal lives in git-ignored files that you create from an example:
+
+| File | From | What you put in it |
+|---|---|---|
+| `firmware/robert_motor/secrets.h` | `secrets.example.h` | Your Wi-Fi networks and a `CONTROL_TOKEN` you make up |
+| `pi/.env` | `pi/.env.example` | `ESP32_TOKEN` (= that token), **your AI key** (`AI_PROVIDER`, `AI_API_KEY`), your name (`OWNER_NAME`), and your robot's calibration |
+| `pi/scripts/local.env` | `local.env.example` | Optional: your Pi's `PI=<user>@<host>`, so the scripts don't need it every time |
+| `pi/memory_seed.json` | `memory_seed.example.json` | Optional: the stories your robot starts with |
+| `pi/certs/` | `tools/make_certs.sh` | Optional: local HTTPS for the PWA's push-to-talk |
+
+For the AI key: Gemini keys come from <https://aistudio.google.com/apikey>, OpenAI keys from
+<https://platform.openai.com/api-keys> (a ChatGPT Plus subscription is not an API key). Both are
+pay-as-you-go: Robert says so out loud when the balance runs out. The calibration values in
+`.env.example` are ours; measure your robot with the tools in [Calibration](#calibration).
+
 ### 1. Backend on a laptop, without hardware
 
 ```sh
 cd pi && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 cp .env.example .env                       # ESP32_TOKEN must equal CONTROL_TOKEN in secrets.h
-.venv/bin/python -m pytest                 # 92 tests, including the ESP32 simulator
+.venv/bin/python -m pytest                 # 103 tests, including the ESP32 simulator
 .venv/bin/python -m robert.sim.fake_esp32 --port 8181 --token dev &
 ESP32_HOST=127.0.0.1 ESP32_PORT=8181 ESP32_TOKEN=dev LIDAR_ENABLED=false .venv/bin/python -m robert.main
 # PWA at http://localhost:8000
@@ -601,10 +627,10 @@ ESP32_HOST=127.0.0.1 ESP32_PORT=8181 ESP32_TOKEN=dev LIDAR_ENABLED=false .venv/b
 
 ### 2. Fresh Raspberry Pi
 
-Flash Raspberry Pi OS Lite (64-bit) with the Imager (user, Wi-Fi, SSH key), then from the Mac:
+Flash Raspberry Pi OS Lite (64-bit) with the Imager (user, Wi-Fi, SSH key), then from your computer:
 
 ```sh
-PI=pi@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/setup_pi.sh   # code, boot overlays, venv, models, services
+PI=<user>@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/setup_pi.sh   # code, boot overlays, venv, models, services
 # reboot the Pi, then:
 pi/scripts/setup_pi.sh audio      # ReSpeaker levels, mask PipeWire
 pi/scripts/setup_pi.sh protect    # read-only SD overlay (a power cut can no longer corrupt the card); reboot
@@ -619,15 +645,15 @@ and boots to console.
 
 ```sh
 pi/scripts/deploy.sh              # rsync pi/ frontend/ ros/ + pip + restart (no sudo)
-ssh pi@robert.local journalctl -u robert -u robert-voice -u robert-vision -f
+ssh <user>@robert.local journalctl -u robert -u robert-voice -u robert-vision -f
 ```
 
 With the SD protected, changes need `setup_pi.sh unprotect`, reboot, deploy, `protect`, reboot.
 
 ### 4. Street mode
 
-`pi/scripts/street_ready.sh` flashes the ESP32 over the air, deploys, adds the iPhone hotspot
-("Maximise compatibility" = 2.4 GHz) as a NetworkManager profile on the Pi and re-protects the
+`HOTSPOT="<your hotspot>" pi/scripts/street_ready.sh` flashes the ESP32 over the air, deploys,
+adds your phone hotspot (2.4 GHz; on an iPhone, "Maximise compatibility") as a NetworkManager profile on the Pi and re-protects the
 SD. At home the hotspot stays off so the Pi and the ESP32 cannot pick different networks.
 
 ---
@@ -659,7 +685,8 @@ Calibration is done with the robot on the floor, open space, and a hand near the
 | `test_lidar.py` | Packet framing, checksum, decoding and binning against captured bytes |
 | `test_nav.py`, `test_follow.py` | Guard on a recorded room (`data/room.jsonl`), explorer and planner behaviour, follow acquisition/tracking/loss (`navsim.py` provides a small kinematic simulator) |
 | `test_vision.py` | Letterbox, NMS, bearing maths |
-| `test_voice_live.py` | Gemini session driver with fake session/mic/player: streaming, muting, tools, photos, memory tools, prompt |
+| `test_voice_live.py` | Conversation driver through the Gemini adapter with fake session/mic/player: streaming, muting, tools, photos, memory tools, prompt |
+| `test_voice_providers.py` | OpenAI Realtime adapter against a scripted socket (session setup, 24 kHz resampling, audio, tools, photo, errors), provider choice and settings |
 | `test_social_dance_photos.py` | Social trigger rules, dance bounds and cancellation, photo listing |
 | `test_memory.py` | Diary and summary across boots, observed transitions, seed, pruning, unwritable directory, API |
 
@@ -681,7 +708,8 @@ docs/lidar-y-ros.md      LiDAR fundamentals and ROS 2 practice (Spanish)
 docs/memoria.md          Memory format and API (Spanish)
 ```
 
-Git-ignored on purpose: `firmware/robert_motor/secrets.h`, `pi/.env`, `pi/certs/`, `pi/memory/`.
+Git-ignored on purpose: `firmware/robert_motor/secrets.h`, `pi/.env`, `pi/scripts/local.env`,
+`pi/memory_seed.json`, `pi/certs/`, `pi/memory/`.
 
 ---
 
@@ -691,7 +719,8 @@ Git-ignored on purpose: `firmware/robert_motor/secrets.h`, `pi/.env`, `pi/certs/
 and Explore, ROS bridge. 2026-10-23: voice with Gemini Live. 2026-10-24: Pi setup script,
 LiDAR self-mask and motion calibration, camera for the voice, follow-me, read-only SD.
 2026-10-25: first day on the street (faster follow, dances, selfies, social greetings, hotspot,
-push-to-talk). 2026-10-28: memory across sessions.
+push-to-talk). 2026-10-28: memory across sessions. 2026-10-29: the voice's AI is a choice
+(Gemini or OpenAI) and every personal value moved to git-ignored files.
 
 **Known limitations and open decisions.**
 
@@ -705,6 +734,6 @@ push-to-talk). 2026-10-28: memory across sessions.
   HTTPS variant needs the local CA installed once.
 - Selfies and the memory live in RAM while the SD is protected; they must be pulled before
   switching off.
-- Voice depends on the network (Gemini API); offline, Robert only says that he has no network.
+- Voice depends on the network (the AI provider); offline, Robert only says that he has no network.
 - Hardware details still worth documenting in this repository: the exact battery pack and the
   5 V regulation for the Pi and the ESP32, and photos of the build.

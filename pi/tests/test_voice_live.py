@@ -4,6 +4,7 @@ from types import SimpleNamespace as NS
 import numpy as np
 
 from robert.voice.live import LiveConversation, describe_state
+from robert.voice.providers.gemini import Gemini
 
 
 class FakeSession:
@@ -116,9 +117,13 @@ def tool(name, **args):
               tool_call=NS(function_calls=[NS(id="1", name=name, args=args)]))
 
 
+def gemini(session):
+    return Gemini("key", "m", "Puck", 600, client=FakeClient(session))
+
+
 def converse(turns, idle_s=0.4, camera=lambda: None):
     session, mic, player, backend = FakeSession(turns), FakeMic(), FakePlayer(), FakeBackend()
-    talk = LiveConversation(FakeClient(session), "m", None, mic, player,
+    talk = LiveConversation(gemini(session), "prompt", mic, player,
                             NS(is_speech=lambda f: False), backend, idle_s, camera)
     asyncio.run(asyncio.wait_for(talk.run(), 5))
     return session, mic, player, backend
@@ -158,11 +163,11 @@ def test_describe_state_never_uses_raw_lidar_distance():
 
 
 def test_wake_phrase_and_prompt():
-    from robert.voice.live import SYSTEM_PROMPT, wake_phrase
+    from robert.voice.live import instructions, wake_phrase
 
     assert wake_phrase("hey_jarvis") == "Hey Jarvis"
     assert wake_phrase("/home/x/robert-models/robert.onnx") == "Robert"
-    assert '"Robert"' in SYSTEM_PROMPT.format(wake="Robert")
+    assert '"Robert"' in instructions(None, "Robert")
 
 
 def test_look_answers_with_the_photo_attached():
@@ -191,7 +196,7 @@ def test_follow_tool_reports_when_it_found_someone():
 
     session, mic, player = FakeSession([[tool("seguirme")]]), FakeMic(), FakePlayer()
     backend = FollowBackend()
-    talk = LiveConversation(FakeClient(session), "m", None, mic, player,
+    talk = LiveConversation(gemini(session), "prompt", mic, player,
                             NS(is_speech=lambda f: False), backend, 2.0)
     asyncio.run(asyncio.wait_for(talk.run(), 10))
     assert backend.commands == ["follow"]
@@ -207,7 +212,7 @@ def test_fun_tools_reach_the_backend():
     session, mic, player = FakeSession([[tool("bailar", estilo="vuelta")], [tool("modo_social", activar=True)],
                                         [tool("hacer_foto")]]), FakeMic(), FakePlayer()
     backend = FunBackend()
-    talk = LiveConversation(FakeClient(session), "m", None, mic, player, NS(is_speech=lambda f: False),
+    talk = LiveConversation(gemini(session), "prompt", mic, player, NS(is_speech=lambda f: False),
                             backend, 0.5, full_photo=lambda: "robert-1.jpg")
     asyncio.run(asyncio.wait_for(talk.run(), 10))
     assert backend.commands == [("dance", "vuelta"), ("social_on", None)]
@@ -225,7 +230,7 @@ def test_opening_line_makes_robert_speak_first():
             self.client_content.append(turns.parts[0].text)
 
     session = OpeningSession([])
-    talk = LiveConversation(FakeClient(session), "m", None, FakeMic(), FakePlayer(), NS(is_speech=lambda f: False),
+    talk = LiveConversation(gemini(session), "prompt", FakeMic(), FakePlayer(), NS(is_speech=lambda f: False),
                             FakeBackend(), 0.3, opening="Saluda")
     asyncio.run(asyncio.wait_for(talk.run(), 5))
     assert session.client_content == ["Saluda"]
@@ -239,27 +244,16 @@ def test_memory_tools_read_and_write_through_the_backend():
     assert session.tool_responses[2].response["ok"] is False
 
 
-def test_prompt_carries_the_memory(monkeypatch):
-    import sys
-    from robert.voice.live import session_config
+def test_prompt_carries_the_memory_and_the_owner():
+    from robert.voice.live import TOOLS, instructions
+    from robert.voice.providers.gemini import session_config
 
-    captured = {}
-
-    class Stub:  # stands in for google.genai.types: anything callable, any attribute
-        def __init__(self, name=""):
-            self.name = name
-
-        def __getattr__(self, name):
-            return Stub(name)
-
-        def __call__(self, **kw):
-            if self.name == "LiveConnectConfig":
-                captured.update(kw)
-            return NS(**kw)
-
-    monkeypatch.setitem(sys.modules, "google", NS(genai=NS(types=Stub())))
-    monkeypatch.setitem(sys.modules, "google.genai", NS(types=Stub()))
-    session_config("Puck", 600, None, "Robert", memory="Tu memoria: dos fotos.")
-    assert captured["system_instruction"].endswith("Tu memoria: dos fotos.")
-    names = [f.name for f in captured["tools"][0].function_declarations]
+    text = instructions(None, "Robert", memory="Tu memoria: dos fotos.", owner="Ana")
+    assert text.endswith("Tu memoria: dos fotos.")
+    assert "hecho en casa por Ana" in text and "Robert, el robot de Ana" in text
+    anon = instructions(None, "Robert")
+    assert "hecho en casa." in anon and "el robot de" not in anon
+    config = session_config(text, "Puck", 600, TOOLS)
+    assert config.system_instruction == text
+    names = [f.name for f in config.tools[0].function_declarations]
     assert "recordar" in names and "apuntar" in names

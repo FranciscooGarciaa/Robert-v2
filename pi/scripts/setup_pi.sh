@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # One-shot setup of a freshly flashed Raspberry Pi OS for Robert (idempotent).
-# Run from the Mac after flashing (user pi, Wi-Fi, SSH key set in Imager):
-#   PI=pi@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/setup_pi.sh
+# Run from your computer after flashing (user, Wi-Fi and SSH key set in Raspberry Pi Imager):
+#   PI=<user>@<ip> SSH_OPTS="-o HostKeyAlias=robert.local" pi/scripts/setup_pi.sh
 # Asks for the Pi's sudo password once. Then reboot the Pi and run
 #   pi/scripts/setup_pi.sh audio      (needs the ReSpeaker driver loaded)
 #   pi/scripts/setup_pi.sh protect    (read-only SD; reboot. Use "unprotect" before deploys)
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+[ -f "$ROOT/pi/scripts/local.env" ] && . "$ROOT/pi/scripts/local.env"   # your PI, SSH_OPTS, HOTSPOT (gitignored)
 PI="${PI:-pi@robert.local}"
 SSH_OPTS="${SSH_OPTS:-}"
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 STEP="${1:-system}"
 ssh_pi() { ssh $SSH_OPTS "$PI" "$@"; }
 
@@ -97,7 +98,10 @@ echo "== services"
 ssh_pi "PW='$PW' bash -s" <<'EOF'
 set -e
 S() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
-for svc in robert robert-voice robert-vision; do S cp ~/robert/pi/deploy/$svc.service /etc/systemd/system/; done
+for svc in robert robert-voice robert-vision; do  # the units run as you, from your home
+  sed "s|@USER@|$USER|g; s|@HOME@|$HOME|g" ~/robert/pi/deploy/$svc.service > /tmp/$svc.service
+  S cp /tmp/$svc.service /etc/systemd/system/
+done
 S systemctl daemon-reload
 S systemctl enable robert robert-voice robert-vision >/dev/null 2>&1
 # No desktop: frees ~100-150 MB of the 1 GB for the voice and vision services.

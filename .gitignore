@@ -11,3 +11,5 @@ build/
 pi/.lidar_mask_captures.json
 pi/certs/
 pi/memory/
+pi/memory_seed.json
+pi/scripts/local.env

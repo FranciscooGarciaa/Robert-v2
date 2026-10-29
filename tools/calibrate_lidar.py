@@ -19,6 +19,7 @@ backend. Pass --pi user@ip and --ssh-opts if robert.local does not resolve.
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -155,7 +156,7 @@ def cmd_show(args) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="robert.local:8000")
-    ap.add_argument("--pi", default="pi@robert.local")
+    ap.add_argument("--pi", default=os.environ.get("PI", "pi@robert.local"))
     ap.add_argument("--ssh-opts", default="")
     ap.add_argument("cmd", choices=["mask-capture", "mask-build", "front", "left", "show"])
     args = ap.parse_args()

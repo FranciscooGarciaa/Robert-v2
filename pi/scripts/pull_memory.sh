@@ -5,10 +5,11 @@
 # With the SD protected (read-only overlay) the memory on the Pi lives in RAM and is
 # lost on reboot: pull it before switching off, push it back after.
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+[ -f "$ROOT/pi/scripts/local.env" ] && . "$ROOT/pi/scripts/local.env"   # your PI, SSH_OPTS, HOTSPOT (gitignored)
 PI="${PI:-pi@robert.local}"
 SSH_OPTS="${SSH_OPTS:-}"
 REMOTE="${MEMORY_DIR:-robert-memory}"
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LOCAL="$ROOT/pi/memory"
 
 case "${1:-pull}" in

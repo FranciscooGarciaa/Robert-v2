@@ -15,7 +15,7 @@ log = logging.getLogger("robert.voice.assets")
 
 PHRASES = {
     "no_network": "Ahora mismo no tengo conexión, perdona.",
-    "no_credit": "Me he quedado sin saldo para hablar. Avisa a Fran para que lo recargue.",
+    "no_credit": "Me he quedado sin saldo para hablar. Avisa a quien me cuida para que lo recargue.",
 }
 
 

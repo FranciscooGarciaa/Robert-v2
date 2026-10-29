@@ -1,13 +1,13 @@
 [Unit]
-Description=Robert voice (wake word + Gemini + speech)
+Description=Robert voice (wake word + live AI + speech)
 After=network-online.target robert.service sound.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/robert/pi
-ExecStart=/home/pi/robert/pi/.venv/bin/python -m robert.voice.service
+User=@USER@
+WorkingDirectory=@HOME@/robert/pi
+ExecStart=@HOME@/robert/pi/.venv/bin/python -m robert.voice.service
 Restart=always
 RestartSec=2
 Environment=PYTHONUNBUFFERED=1

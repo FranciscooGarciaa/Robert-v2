@@ -11,11 +11,13 @@ HOME = Path.home()
 
 @dataclass(frozen=True)
 class VoiceSettings:
-    gemini_api_key: str = ""
-    # Speech-to-speech model; measured on the Pi 2026-10-23: ~0.5 s connect,
-    # 0.6-0.8 s from the end of speech to the first audio of the reply.
-    live_model: str = "gemini-3.8-live"
-    voice: str = "Puck"
+    # The speech-to-speech AI (robert/voice/providers/): gemini or openai, with its key.
+    # Model and voice left empty use the provider's defaults.
+    ai_provider: str = "gemini"
+    ai_api_key: str = ""
+    ai_model: str = ""
+    ai_voice: str = ""
+    owner_name: str = ""            # "Robert, el robot de <owner>"; empty: just "Robert"
     # Server VAD: this much silence ends your turn. 300 ms with high sensitivity cut
     # people off at their first pause ("Quiero..."), and the rest was lost while
     # Robert answered (half-duplex), so: 600 ms, low end-of-speech sensitivity.
@@ -33,10 +35,15 @@ class VoiceSettings:
         if dotenv:
             _load_dotenv(dotenv)
         e = os.environ
+        provider = e.get("AI_PROVIDER", cls.ai_provider).strip().lower()
+        # Older .env files name the Gemini settings directly; they still work.
+        legacy = provider in ("gemini", "google")
         return cls(
-            gemini_api_key=e.get("GEMINI_API_KEY", cls.gemini_api_key),
-            live_model=e.get("VOICE_LIVE_MODEL", cls.live_model),
-            voice=e.get("VOICE_VOICE", cls.voice),
+            ai_provider=provider,
+            ai_api_key=e.get("AI_API_KEY") or e.get("GEMINI_API_KEY" if legacy else "OPENAI_API_KEY", ""),
+            ai_model=e.get("AI_MODEL") or (e.get("VOICE_LIVE_MODEL", "") if legacy else ""),
+            ai_voice=e.get("AI_VOICE") or (e.get("VOICE_VOICE", "") if legacy else ""),
+            owner_name=e.get("OWNER_NAME", cls.owner_name).strip(),
             silence_ms=int(e.get("VOICE_SILENCE_MS", cls.silence_ms)),
             idle_s=float(e.get("VOICE_IDLE_S", cls.idle_s)),
             wake_model=e.get("WAKE_MODEL", cls.wake_model),

@@ -1,4 +1,4 @@
-"""Robert voice service: wake word -> Gemini Live conversation, as its own process.
+"""Robert voice service: wake word -> live AI conversation, as its own process.
 
     python -m robert.voice.service        (from pi/, reads pi/.env)
 
@@ -19,7 +19,8 @@ from .audio import Mic, StreamPlayer
 from .backend import Backend
 from .config import VoiceSettings
 from .listener import Vad, WakeWord
-from .live import LiveConversation, session_config, wake_phrase
+from . import providers
+from .live import LiveConversation, instructions, introduce, wake_phrase
 
 log = logging.getLogger("robert.voice")
 
@@ -27,15 +28,13 @@ GREET_PORT = 8001
 REMOTE_PORT = 8003        # raw PCM16 16 kHz from the PWA (via the backend), one connection per press
 END_OF_TURN_SILENCE_S = 1.0
 GREETING = ("Se acaba de parar delante de ti una persona desconocida. Salúdala con gracia, "
-            "preséntate como Robert, el robot de Fran, y hazle una pregunta corta.")
+            "preséntate como {me} y hazle una pregunta corta.")
 
 
 class VoiceService:
     def __init__(self, s: VoiceSettings):
-        from google import genai
-
         self.s = s
-        self.client = genai.Client(api_key=s.gemini_api_key)
+        self.ai = providers.make(s.ai_provider, s.ai_api_key, s.ai_model, s.ai_voice, s.silence_ms)
         self.mic = Mic(s.alsa_device)
         self.player = StreamPlayer(s.alsa_device)
         self.vad = Vad()
@@ -62,7 +61,7 @@ class VoiceService:
                     self.greet.set()
                 while chunk := conn.recv(4096):
                     self.mic.inject(chunk)
-                # Released: a moment of silence so Gemini knows the turn is over.
+                # Released: a moment of silence so the AI's VAD knows the turn is over.
                 self.mic.inject(bytes(int(END_OF_TURN_SILENCE_S * 16000) * 2))
                 log.info("phone talk: released")
 
@@ -74,7 +73,7 @@ class VoiceService:
             def do_POST(self):
                 if self.path != "/greet":
                     return self.send_error(404)
-                service.opening = GREETING
+                service.opening = GREETING.format(me=introduce(service.s.owner_name))
                 service.greet.set()
                 self.send_response(204)
                 self.end_headers()
@@ -90,16 +89,16 @@ class VoiceService:
         asyncio.get_running_loop().call_later(self.player.remaining_s(), self.mic.mute, False)
         state = await asyncio.to_thread(self.backend.state)
         memory = await asyncio.to_thread(self.backend.recall)
-        config = session_config(s.voice, s.silence_ms, state, wake_phrase(s.wake_model), memory)
-        talk = LiveConversation(self.client, s.live_model, config,
+        prompt = instructions(state, wake_phrase(s.wake_model), memory, s.owner_name)
+        talk = LiveConversation(self.ai, prompt,
                                 self.mic, self.player, self.vad, self.backend, s.idle_s,
                                 camera.capture_jpeg, opening=opening, full_photo=camera.full_photo)
         try:
             await talk.run()
         except Exception as exc:  # noqa: BLE001 - network/API: say so, back to the wake word
             log.warning("conversation failed: %r", exc)
-            # An empty Gemini balance looks like any other API error: say which one it is.
-            self.player.write(self.no_credit if "credits are depleted" in str(exc) else self.no_network)
+            # An empty AI balance looks like any other API error: say which one it is.
+            self.player.write(self.no_credit if self.ai.out_of_credit(exc) else self.no_network)
             await asyncio.sleep(self.player.remaining_s())
 
     def run(self) -> None:
@@ -108,7 +107,7 @@ class VoiceService:
         threading.Thread(target=self.serve_local, name="greet", daemon=True).start()
         threading.Thread(target=self.serve_remote, name="phone-talk", daemon=True).start()
         self.backend.report("idle")
-        log.info("voice ready (wake word %r, model %s)", self.s.wake_model, self.s.live_model)
+        log.info("voice ready (wake word %r, %s model %s)", self.s.wake_model, self.s.ai_provider, self.ai.model)
         while True:
             woke = self.wake.wait(self.greet)
             opening = None if woke is not None else self.opening
@@ -132,8 +131,8 @@ def main() -> None:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     s = VoiceSettings.from_env()
-    if not s.gemini_api_key:
-        log.warning("GEMINI_API_KEY is empty: conversations will fail")
+    if not s.ai_api_key:
+        log.warning("AI_API_KEY is empty: conversations will fail (see pi/.env.example)")
     VoiceService(s).run()
 
 

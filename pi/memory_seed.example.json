@@ -1,0 +1,9 @@
+{
+  "_": "Recuerdos con los que tu robot arranca, contados por él en primera persona. Copia este fichero a pi/memory_seed.json (fuera de git) y cambia las historias por las vuestras; cada una se añade a memory.json una sola vez (ver robert/memory.py). Sin pi/memory_seed.json arranca sin recuerdos.",
+  "stories": [
+    {
+      "when": "2026-01-01",
+      "text": "El día que me encendieron por primera vez: di una vuelta por el salón y saludé a todo el mundo."
+    }
+  ]
+}

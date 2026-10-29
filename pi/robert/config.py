@@ -128,7 +128,7 @@ class Settings:
             follow_timeout_s=float(e.get("FOLLOW_TIMEOUT_S", cls.follow_timeout_s)),
             photos_dir=Path(e.get("PHOTOS_DIR", cls.photos_dir)),
             memory_enabled=_bool(e.get("MEMORY_ENABLED"), cls.memory_enabled),
-            memory_dir=Path(e.get("MEMORY_DIR", cls.memory_dir)),
+            memory_dir=Path(e.get("MEMORY_DIR", cls.memory_dir)).expanduser(),
             memory_seed=Path(e.get("MEMORY_SEED", cls.memory_seed)),
             http_host=e.get("HTTP_HOST", cls.http_host),
             http_port=int(e.get("HTTP_PORT", cls.http_port)),
